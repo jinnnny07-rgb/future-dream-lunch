@@ -1,18 +1,15 @@
-import React, { useState, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { 
   BarChart3, 
   Users, 
   Store, 
-  Copy, 
-  Check, 
-  PhoneCall, 
   Ticket, 
   ChevronRight, 
   Share2,
   Clock
 } from 'lucide-react';
 import { Booking, Restaurant, ThemeConfig } from '../types';
-import { formatKRW, generateRestaurantReservationText, copyToClipboard } from '../utils';
+import { formatKRW } from '../utils';
 
 interface LiveSummaryWidgetProps {
   bookings: Booking[];
@@ -29,11 +26,6 @@ export const LiveSummaryWidget: React.FC<LiveSummaryWidgetProps> = ({
   onOpenShareModal,
   onSelectAdminSummary,
 }) => {
-  const [selectedRestForCopy, setSelectedRestForCopy] = useState<string>(
-    restaurants[0]?.id || ''
-  );
-  const [copiedSuccess, setCopiedSuccess] = useState<boolean>(false);
-
   // Aggregated calculations
   const totalHeadcount = useMemo(() => {
     return bookings.reduce((sum, b) => sum + b.headcount, 0);
@@ -67,19 +59,6 @@ export const LiveSummaryWidget: React.FC<LiveSummaryWidgetProps> = ({
       };
     });
   }, [restaurants, bookings]);
-
-  // Copy reservation text for selected restaurant
-  const handleCopyReservationText = async () => {
-    const targetRest = restaurants.find((r) => r.id === selectedRestForCopy) || restaurants[0];
-    const targetBookings = bookings.filter((b) => b.restaurantId === targetRest.id);
-    const text = generateRestaurantReservationText(targetRest, targetBookings);
-    
-    const success = await copyToClipboard(text);
-    if (success) {
-      setCopiedSuccess(true);
-      setTimeout(() => setCopiedSuccess(false), 2500);
-    }
-  };
 
   return (
     <div 
@@ -212,57 +191,9 @@ export const LiveSummaryWidget: React.FC<LiveSummaryWidgetProps> = ({
             })}
           </div>
         </div>
-
-        {/* 3. One-Click Reservation Copy for Calls / SMS */}
-        <div className="mt-5 p-4 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-900 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <PhoneCall className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-              <span className="text-xs font-bold text-indigo-950 dark:text-indigo-200">
-                식당 사전 예약 통화/문자용 데이터 요약문
-              </span>
-            </div>
-          </div>
-
-          <div className="flex flex-col sm:flex-row gap-2">
-            <select
-              value={selectedRestForCopy}
-              onChange={(e) => setSelectedRestForCopy(e.target.value)}
-              className="py-2 px-3 rounded-xl border bg-white dark:bg-slate-900 border-indigo-200 dark:border-indigo-800 text-xs font-medium text-slate-800 dark:text-slate-200 focus:outline-hidden"
-            >
-              {restaurants.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.name} 예약 요약문
-                </option>
-              ))}
-            </select>
-
-            <button
-              onClick={handleCopyReservationText}
-              id="btn-copy-restaurant-reservation-text"
-              className="flex-1 py-2 px-3 rounded-xl text-white font-semibold text-xs transition-all shadow-xs flex items-center justify-center space-x-1.5 active:scale-98"
-              style={{ backgroundColor: themeConfig.primaryColor }}
-            >
-              {copiedSuccess ? (
-                <>
-                  <Check className="w-3.5 h-3.5 text-emerald-300" />
-                  <span>예약 문구 복사 완료!</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-3.5 h-3.5" />
-                  <span>원클릭 예약 텍스트 복사</span>
-                </>
-              )}
-            </button>
-          </div>
-          <p className="text-[11px] text-indigo-800/80 dark:text-indigo-300">
-            💡 사장님께 전화 통화나 문자로 총 인원과 사전 주문 메뉴를 전달할 때 그대로 복사해 사용하세요.
-          </p>
-        </div>
       </div>
 
-      {/* 4. Live Booking Activity Feed */}
+      {/* 3. Live Booking Activity Feed */}
       <div 
         className="p-5 sm:p-6 rounded-3xl border shadow-sm transition-colors duration-200"
         style={{
