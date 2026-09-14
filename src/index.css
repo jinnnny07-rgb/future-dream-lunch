@@ -1,0 +1,59 @@
+@import "tailwindcss";
+
+:root {
+  --primary-color: #2C2B70;
+  --primary-hover: #22215b;
+  --accent-color: #3b82f6;
+  --secondary-color: #C6C4C3;
+  --bg-color: #f8fafc;
+  --card-bg: #ffffff;
+  --text-main: #0f172a;
+  --text-muted: #64748b;
+  --border-color: #e2e8f0;
+  --font-family: 'Noto Sans KR', sans-serif;
+}
+
+[data-theme="dark"] {
+  --primary-color: #3b3a99;
+  --primary-hover: #4e4cb8;
+  --accent-color: #60a5fa;
+  --secondary-color: #64748b;
+  --bg-color: #0b0f19;
+  --card-bg: #131b2e;
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --border-color: #1e293b;
+}
+
+body {
+  font-family: var(--font-family);
+  background-color: var(--bg-color);
+  color: var(--text-main);
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* Custom utility classes using CSS variables */
+.bg-custom-primary {
+  background-color: var(--primary-color);
+}
+.text-custom-primary {
+  color: var(--primary-color);
+}
+.border-custom-primary {
+  border-color: var(--primary-color);
+}
+.bg-custom-accent {
+  background-color: var(--accent-color);
+}
+.text-custom-accent {
+  color: var(--accent-color);
+}
+.border-custom-accent {
+  border-color: var(--accent-color);
+}
+.bg-custom-card {
+  background-color: var(--card-bg);
+}
+.border-custom {
+  border-color: var(--border-color);
+}

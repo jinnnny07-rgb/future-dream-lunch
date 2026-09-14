@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300" width="100%" height="100%">
+  <!-- Background transparent -->
+  <g fill="none" stroke="#2C2B70" stroke-width="8" stroke-linecap="square" stroke-linejoin="miter">
+    <!-- Staircase path matching Future & Dream Academy logo -->
+    <!-- Bottom line -->
+    <path d="M 36 200 L 72 200 L 72 165 L 105 165 L 105 128 L 138 128 L 138 90 L 264 90" />
+  </g>
+  
+  <!-- Typography inside the stairs -->
+  <g fill="#2C2B70" font-family="'Pretendard', 'Noto Sans KR', -apple-system, sans-serif" font-weight="700" letter-spacing="-0.5px">
+    <text x="152" y="132" font-size="42">Future</text>
+    <text x="118" y="174" font-size="42">&amp; Dream</text>
+    <text x="85" y="216" font-size="42">Academy</text>
+  </g>
+</svg>
