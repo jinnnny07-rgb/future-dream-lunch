@@ -54,7 +54,7 @@ ${groupsSummary}
 • 주문 메뉴 합계:
 ${menuLines.length > 0 ? menuLines.join('\n') : '  (현장 주문 예정)'}
 
-※ ${restaurant.voucherOnly ? '식권 전용 결제 매장으로 식권 지참 후 방문합니다.' : '현장 결제 예정입니다.'}
+※ 현장 결제 예정입니다.
 도착 시 바로 식사할 수 있도록 사전 준비 부탁드립니다. 감사합니다!`;
 }
 

@@ -3,7 +3,6 @@ import {
   BarChart3, 
   Users, 
   Store, 
-  Ticket, 
   ChevronRight, 
   Share2,
   Clock
@@ -153,18 +152,10 @@ export const LiveSummaryWidget: React.FC<LiveSummaryWidgetProps> = ({
                   className="p-3.5 rounded-2xl border bg-white dark:bg-slate-800/90 border-slate-200 dark:border-slate-700/80 transition-shadow hover:shadow-xs"
                 >
                   <div className="flex items-center justify-between mb-1.5">
-                    <div className="flex items-center space-x-2">
-                      <h4 className="font-bold text-sm text-slate-800 dark:text-slate-100 flex items-center">
-                        <Store className="w-3.5 h-3.5 mr-1 text-indigo-500" />
-                        {restaurant.name}
-                      </h4>
-                      {restaurant.voucherOnly && (
-                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 flex items-center">
-                          <Ticket className="w-2.5 h-2.5 mr-0.5" />
-                          식권 {headcount}장 필요
-                        </span>
-                      )}
-                    </div>
+                    <h4 className="font-bold text-sm text-slate-800 dark:text-slate-100 flex items-center">
+                      <Store className="w-3.5 h-3.5 mr-1 text-indigo-500" />
+                      {restaurant.name}
+                    </h4>
 
                     <div className="text-xs font-bold text-indigo-600 dark:text-indigo-400">
                       총 {headcount}명 ({ordersCount}팀)

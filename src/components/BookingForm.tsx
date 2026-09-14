@@ -11,7 +11,6 @@ import {
   AlertCircle, 
   Sparkles, 
   Share2, 
-  Ticket, 
   Flame, 
   ShieldCheck,
   RotateCcw
@@ -167,7 +166,7 @@ export const BookingForm: React.FC<BookingFormProps> = ({
       difference,
       agreedToPolicy: true,
       createdAt: timeStr,
-      status: activeRestaurant.voucherOnly ? '접수완료' : '접수완료',
+      status: '접수완료',
     };
 
     // Confetti celebration
@@ -426,12 +425,6 @@ export const BookingForm: React.FC<BookingFormProps> = ({
                         <Store className="w-4 h-4 mr-1.5 text-indigo-500" />
                         {rest.name}
                       </h4>
-                      {rest.voucherOnly && (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 flex items-center">
-                          <Ticket className="w-3 h-3 mr-0.5" />
-                          식권전용
-                        </span>
-                      )}
                     </div>
                     <span className="text-xs text-indigo-600 dark:text-indigo-400 font-medium block mb-1">
                       {rest.category}
@@ -453,25 +446,6 @@ export const BookingForm: React.FC<BookingFormProps> = ({
               );
             })}
           </div>
-
-          {/* VOUCHER RESTAURANT AUTO-NOTICE (Mandatory for 칭마레이) */}
-          {activeRestaurant.voucherOnly && (
-            <div 
-              id="voucher-notice-banner"
-              className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 flex items-start space-x-3 text-xs animate-fade-in"
-            >
-              <Ticket className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-              <div className="space-y-1">
-                <span className="font-bold text-sm block text-amber-950 dark:text-amber-100">
-                  {activeRestaurant.name} 식권 전용 식당 안내
-                </span>
-                <p className="leading-relaxed">
-                  {activeRestaurant.voucherNotice || 
-                    '⚠️ 칭마레이는 식권 전용 식당입니다. 점심 신청 완료 후 11:45까지 3층 안내 데스크에서 실물 식권을 반드시 수령하여 식당에 제출해 주세요!'}
-                </p>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* SECTION 4: Dynamic Menu List for Selected Restaurant */}

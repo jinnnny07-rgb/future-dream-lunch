@@ -3,7 +3,7 @@ import {
   Sparkles, 
   ArrowDownCircle, 
   Clock, 
-  Ticket, 
+  UtensilsCrossed, 
   Calculator, 
   ShieldCheck, 
   Building2,
@@ -93,16 +93,16 @@ export const AcademyHero: React.FC<AcademyHeroProps> = ({
                 className="text-2xl sm:text-3xl lg:text-4xl font-black tracking-tight"
                 style={{ color: themeConfig.isDark ? '#f8fafc' : '#1e1b4b' }}
               >
-                신세계 퓨쳐앤드림 아카데미
+                신세계 Future &amp; Dream Academy
               </h1>
               <p className="text-sm sm:text-base font-bold text-slate-600 dark:text-slate-300">
-                그룹 교육생 점심 사전 신청 &amp; 실시간 식대 정산 시스템
+                교육생 실시간 점심 예약 &amp; 식대 관리 시스템
               </p>
             </div>
 
             {/* Editorial Narrative */}
             <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed max-w-2xl">
-              신세계 퓨쳐앤드림 아카데미 교육생 여러분의 편안한 점심시간을 위한 예약 플랫폼입니다. <strong>1인당 {formatKRW(budget)}</strong>의 교육생 식대 지원을 바탕으로 메뉴 선택, 식당별 이동 인원 집계를 지원합니다.
+              신세계 Future &amp; Dream Academy 교육생 여러분의 편안한 점심시간을 위한 예약 플랫폼입니다. <strong>1인당 {formatKRW(budget)}</strong>의 교육생 식대 지원을 바탕으로 메뉴 선택, 식당별 이동 인원 집계를 지원합니다.
             </p>
 
             {/* Premium Feature Showcase Grid */}
@@ -125,11 +125,11 @@ export const AcademyHero: React.FC<AcademyHeroProps> = ({
                   className="w-9 h-9 rounded-xl flex items-center justify-center text-white shrink-0 shadow-xs"
                   style={{ backgroundColor: '#d97706' }}
                 >
-                  <Ticket className="w-4 h-4" />
+                  <UtensilsCrossed className="w-4 h-4" />
                 </div>
                 <div className="text-xs">
-                  <span className="font-extrabold text-slate-800 dark:text-slate-100 block">식권/일반 연동</span>
-                  <span className="text-slate-500 dark:text-slate-400 text-[11px]">칭마레이 등 식권 안내</span>
+                  <span className="font-extrabold text-slate-800 dark:text-slate-100 block">식당 맞춤 주문</span>
+                  <span className="text-slate-500 dark:text-slate-400 text-[11px]">인기 메뉴 실시간 집계</span>
                 </div>
               </div>
 
@@ -165,7 +165,7 @@ export const AcademyHero: React.FC<AcademyHeroProps> = ({
                 onClick={onScrollToNotices}
                 className="py-3.5 px-5 rounded-2xl text-xs sm:text-sm font-semibold border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shadow-xs"
               >
-                마감 &amp; 식권 공지 보기
+                마감 및 공지사항 보기
               </button>
 
               <div className="text-xs font-medium text-slate-500 dark:text-slate-400 pl-1 flex items-center space-x-2">

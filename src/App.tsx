@@ -26,7 +26,20 @@ export default function App() {
   // Persistent State (localStorage with initial fallbacks)
   const [restaurants, setRestaurants] = useState<Restaurant[]>(() => {
     const saved = localStorage.getItem('app_restaurants');
-    return saved ? JSON.parse(saved) : INITIAL_RESTAURANTS;
+    if (saved) {
+      try {
+        const parsed: Restaurant[] = JSON.parse(saved);
+        return parsed.map((r) => ({
+          ...r,
+          voucherOnly: false,
+          category: r.category.replace(' / 식권 전용', '').replace(' / 식권전용', ''),
+          description: r.description.replace(' (※ 반드시 사전 식권 지참)', ''),
+        }));
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    return INITIAL_RESTAURANTS;
   });
 
   const [bookings, setBookings] = useState<Booking[]>(() => {
@@ -66,8 +79,14 @@ export default function App() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
+        if (!parsed.siteTitle || parsed.siteTitle === '신세계 퓨쳐앤드림 아카데미' || parsed.siteTitle === '스마트 그룹 점심 신청 센터') {
+          parsed.siteTitle = DEFAULT_THEME_CONFIG.siteTitle;
+        }
+        if (!parsed.siteSubtitle || parsed.siteSubtitle.includes('임직원') || parsed.siteSubtitle.includes('실시간 그룹 점심 예약')) {
+          parsed.siteSubtitle = DEFAULT_THEME_CONFIG.siteSubtitle;
+        }
         if (!parsed.deadlineTime || parsed.deadlineTime === '11:30') {
-          return { ...DEFAULT_THEME_CONFIG, ...parsed, deadlineTime: '10:30' };
+          parsed.deadlineTime = '10:30';
         }
         return { ...DEFAULT_THEME_CONFIG, ...parsed };
       } catch (e) {
@@ -79,7 +98,18 @@ export default function App() {
 
   const [seoConfig, setSeoConfig] = useState<SeoConfig>(() => {
     const saved = localStorage.getItem('app_seo_config');
-    return saved ? JSON.parse(saved) : DEFAULT_SEO_CONFIG;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed.metaTitle?.includes('신세계 퓨쳐앤드림') || parsed.metaTitle?.includes('그룹 점심 신청')) {
+          return DEFAULT_SEO_CONFIG;
+        }
+        return { ...DEFAULT_SEO_CONFIG, ...parsed };
+      } catch {
+        return DEFAULT_SEO_CONFIG;
+      }
+    }
+    return DEFAULT_SEO_CONFIG;
   });
 
   // UI State & Admin Auth State
@@ -367,7 +397,7 @@ export default function App() {
       <footer className="mt-12 py-6 border-t border-slate-200 dark:border-slate-800 text-center text-xs text-slate-500 dark:text-slate-400">
         <div className="max-w-7xl mx-auto px-4 space-y-1">
           <p className="font-semibold text-slate-700 dark:text-slate-300">
-            {themeConfig.siteTitle} • 실시간 점심 예약 &amp; 식대 집계 시스템
+            {themeConfig.siteTitle} • {themeConfig.siteSubtitle}
           </p>
           <p className="text-[11px]">
             기본 지정 색상: 메인 (#2C2B70) / 서브 (#C6C4C3) | 1인당 기본 지원 식대: {themeConfig.budgetPerPerson?.toLocaleString()}원

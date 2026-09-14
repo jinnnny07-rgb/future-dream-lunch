@@ -7,7 +7,6 @@ import {
   Clock, 
   Users, 
   UtensilsCrossed, 
-  Sparkles,
   Lock,
   LogOut
 } from 'lucide-react';
@@ -87,23 +86,9 @@ export const Navbar: React.FC<NavbarProps> = ({
               />
             </div>
             <div>
-              <div className="flex items-center space-x-2">
-                <h1 className="text-base sm:text-lg font-bold tracking-tight" style={{ color: themeConfig.isDark ? '#f8fafc' : themeConfig.primaryColor }}>
-                  {themeConfig.siteTitle}
-                </h1>
-                <span 
-                  className="hidden md:inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold shadow-xs"
-                  style={{ 
-                    backgroundColor: themeConfig.isDark ? '#1e293b' : '#f1f5f9',
-                    color: themeConfig.primaryColor,
-                    borderColor: themeConfig.secondaryColor,
-                    borderWidth: 1
-                  }}
-                >
-                  <Sparkles className="w-3 h-3 mr-1 text-amber-500" />
-                  연수원 식대 시스템
-                </span>
-              </div>
+              <h1 className="text-base sm:text-lg font-bold tracking-tight" style={{ color: themeConfig.isDark ? '#f8fafc' : themeConfig.primaryColor }}>
+                {themeConfig.siteTitle}
+              </h1>
               <p className="text-[11px] text-slate-500 hidden sm:block">
                 {themeConfig.siteSubtitle}
               </p>

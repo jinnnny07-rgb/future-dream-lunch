@@ -21,10 +21,9 @@ export const INITIAL_RESTAURANTS: Restaurant[] = [
   {
     id: 'rest-2',
     name: '칭마레이',
-    category: '중식 / 식권 전용',
-    description: '빠르고 깔끔한 중화요리 전문점 (※ 반드시 사전 식권 지참)',
-    voucherOnly: true,
-    voucherNotice: '⚠️ [식권 전용 안내] 칭마레이는 기관 계약 식권 전용 식당입니다. 점심 신청 후 11:45까지 3층 행정데스크에서 실물 식권을 꼭 수령해 제출해 주세요!',
+    category: '중식',
+    description: '빠르고 깔끔한 정통 중화요리 전문점',
+    voucherOnly: false,
     tel: '02-555-8930',
     iconName: 'Soup',
     menus: [
@@ -59,18 +58,18 @@ export const INITIAL_NOTICES: Notice[] = [
   {
     id: 'notice-1',
     title: '📢 [공지] 오늘 점심 신청 마감 및 식대 지원 안내',
-    content: '금일 점심 신청은 식당 준비 및 식권 배부를 위해 오전 10:30에 마감됩니다. 인당 10,000원 기준을 준수해 주시고, 칭마레이는 3층 데스크에서 실물 식권을 챙겨주세요.',
+    content: '금일 점심 신청은 식당 준비 및 주문 집계를 위해 오전 10:30에 마감됩니다. 인당 10,000원 기준을 준수해 주시기 바랍니다.',
     isPinned: true,
     date: '오늘 09:30',
     type: 'notice',
   },
   {
     id: 'notice-2',
-    title: '💡 [칭마레이] 식권 수령 안내',
-    content: '칭마레이 식당 신청 조는 대표자가 10:45까지 3층 행정데스크에서 실물 식권을 수령하신 후 식당에 방문해 주시기 바랍니다.',
+    title: '💡 [점심 안내] 식당별 이동 및 예약 준수 안내',
+    content: '각 조별 대표자께서는 11:45까지 식당으로 이동해 주시기 바라며, 변동 사항이 있을 경우 대시보드를 통해 확인해 주세요.',
     isPinned: false,
     date: '오늘 09:50',
-    type: 'warning',
+    type: 'info',
   },
   {
     id: 'notice-3',
@@ -120,7 +119,7 @@ export const INITIAL_BOOKINGS: Booking[] = [
     difference: 500,
     agreedToPolicy: true,
     createdAt: '10:55',
-    status: '식권수령완료',
+    status: '접수완료',
   },
   {
     id: 'book-3',
@@ -150,15 +149,15 @@ export const DEFAULT_THEME_CONFIG: ThemeConfig = {
   bgColor: '#f8fafc',
   font: 'Noto Sans KR',
   isDark: false,
-  siteTitle: '신세계 퓨쳐앤드림 아카데미',
-  siteSubtitle: 'Future & Dream Academy • 실시간 그룹 점심 예약 & 식대 관리 시스템',
+  siteTitle: '신세계 Future & Dream Academy',
+  siteSubtitle: '교육생 실시간 점심 예약 & 식대 관리 시스템',
   budgetPerPerson: 10000,
   deadlineTime: '10:30',
   adminPassword: '9707',
 };
 
 export const DEFAULT_SEO_CONFIG: SeoConfig = {
-  metaTitle: '신세계 퓨쳐앤드림 아카데미 - 그룹 점심 신청 & 관리자 대시보드',
-  metaDescription: '신세계 퓨쳐앤드림 아카데미 교육생을 위한 실시간 점심 예약, 인당 10,000원 식대 자동 계산 및 식당 사전 예약 집계 웹앱',
-  keywords: '신세계, 퓨쳐앤드림아카데미, 점심신청, 그룹점심, 식대계산기, 식당예약, 관리자대시보드, 임방식당, 칭마레이, 고릴라쿡',
+  metaTitle: '신세계 Future & Dream Academy - 교육생 실시간 점심 예약 & 식대 관리 시스템',
+  metaDescription: '신세계 Future & Dream Academy 교육생 실시간 점심 예약 & 식대 관리 시스템',
+  keywords: '신세계, Future & Dream Academy, 퓨쳐앤드림아카데미, 점심신청, 교육생식대, 식대계산기, 식당예약, 관리자대시보드, 임방식당, 칭마레이, 고릴라쿡',
 };
