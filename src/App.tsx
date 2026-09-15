@@ -22,11 +22,11 @@ import { ShareModal } from './components/ShareModal';
 import { AdminAuthModal } from './components/AdminAuthModal';
 import { ShieldCheck, User, Sparkles, Lock } from 'lucide-react';
 
-// Firebase DB 연동 상태 관리
+export default function App() {
+  // Firebase DB 연동 상태 관리
   const [restaurants, setRestaurants] = useState<Restaurant[]>(INITIAL_RESTAURANTS);
   const [bookings, setBookings] = useState<Booking[]>(INITIAL_BOOKINGS);
   const [notices, setNotices] = useState<Notice[]>(INITIAL_NOTICES);
-  const [themeConfig, setThemeConfig] = useState<ThemeConfig>(DEFAULT_THEME_CONFIG);
 
   // 실시간 Firebase 데이터 구독
   useEffect(() => {
