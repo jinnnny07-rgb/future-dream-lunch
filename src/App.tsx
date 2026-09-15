@@ -2,7 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
-
+import { saveAdminData, subscribeAdminData } from './firebase';
 import React, { useState, useEffect } from 'react';
 import { 
   INITIAL_RESTAURANTS, 
@@ -22,57 +22,24 @@ import { ShareModal } from './components/ShareModal';
 import { AdminAuthModal } from './components/AdminAuthModal';
 import { ShieldCheck, User, Sparkles, Lock } from 'lucide-react';
 
-export default function App() {
-  // Persistent State (localStorage with initial fallbacks)
-  const [restaurants, setRestaurants] = useState<Restaurant[]>(() => {
-    const saved = localStorage.getItem('app_restaurants');
-    if (saved) {
-      try {
-        const parsed: Restaurant[] = JSON.parse(saved);
-        return parsed.map((r) => ({
-          ...r,
-          voucherOnly: false,
-          category: r.category.replace(' / 식권 전용', '').replace(' / 식권전용', ''),
-          description: r.description.replace(' (※ 반드시 사전 식권 지참)', ''),
-        }));
-      } catch (e) {
-        console.error(e);
-      }
-    }
-    return INITIAL_RESTAURANTS;
-  });
+// Firebase DB 연동 상태 관리
+  const [restaurants, setRestaurants] = useState<Restaurant[]>(INITIAL_RESTAURANTS);
+  const [bookings, setBookings] = useState<Booking[]>(INITIAL_BOOKINGS);
+  const [notices, setNotices] = useState<Notice[]>(INITIAL_NOTICES);
+  const [themeConfig, setThemeConfig] = useState<ThemeConfig>(DEFAULT_THEME_CONFIG);
 
-  const [bookings, setBookings] = useState<Booking[]>(() => {
-    const saved = localStorage.getItem('app_bookings');
-    return saved ? JSON.parse(saved) : INITIAL_BOOKINGS;
-  });
-
-  const [notices, setNotices] = useState<Notice[]>(() => {
-    const saved = localStorage.getItem('app_notices');
-    if (saved) {
-      try {
-        const parsed: Notice[] = JSON.parse(saved);
-        return parsed.map((n) => {
-          if (n.id === 'notice-1') {
-            return {
-              ...n,
-              content: n.content.replace(/11:30/g, '10:30'),
-            };
-          }
-          if (n.id === 'notice-2') {
-            return {
-              ...n,
-              content: n.content.replace(/11:45/g, '10:45'),
-            };
-          }
-          return n;
-        });
-      } catch (e) {
-        return INITIAL_NOTICES;
+  // 실시간 Firebase 데이터 구독
+  useEffect(() => {
+    const unsubscribe = subscribeAdminData((data) => {
+      if (data) {
+        if (data.restaurants) setRestaurants(data.restaurants);
+        if (data.bookings) setBookings(data.bookings);
+        if (data.notices) setNotices(data.notices);
+        if (data.themeConfig) setThemeConfig(data.themeConfig);
       }
-    }
-    return INITIAL_NOTICES;
-  });
+    });
+    return () => unsubscribe();
+  }, []);
 
   const [themeConfig, setThemeConfig] = useState<ThemeConfig>(() => {
     const saved = localStorage.getItem('app_theme_config');
