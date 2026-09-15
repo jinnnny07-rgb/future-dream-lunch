@@ -2,7 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
-import { saveAdminData, subscribeAdminData } from './firebase';
+
 import React, { useState, useEffect } from 'react';
 import { 
   INITIAL_RESTAURANTS, 
@@ -23,41 +23,60 @@ import { AdminAuthModal } from './components/AdminAuthModal';
 import { ShieldCheck, User, Sparkles, Lock } from 'lucide-react';
 
 export default function App() {
-  // Firebase DB 연동 상태 관리
-  const [restaurants, setRestaurants] = useState<Restaurant[]>(INITIAL_RESTAURANTS);
-  const [bookings, setBookings] = useState<Booking[]>(INITIAL_BOOKINGS);
-  const [notices, setNotices] = useState<Notice[]>(INITIAL_NOTICES);
-
-  // 실시간 Firebase 데이터 구독
-  useEffect(() => {
-    const unsubscribe = subscribeAdminData((data) => {
-      if (data) {
-        if (data.restaurants) setRestaurants(data.restaurants);
-        if (data.bookings) setBookings(data.bookings);
-        if (data.notices) setNotices(data.notices);
-        if (data.themeConfig) setThemeConfig(data.themeConfig);
+  // Persistent State (localStorage with initial fallbacks)
+  const [restaurants, setRestaurants] = useState<Restaurant[]>(() => {
+    const saved = localStorage.getItem('app_restaurants');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((r: Partial<Restaurant>) => ({
+            id: r.id || 'rest-' + Date.now(),
+            name: r.name || '식당',
+            category: r.category || '일반음식점',
+            description: r.description || '',
+            voucherOnly: false,
+            voucherNotice: '',
+            iconName: r.iconName || 'Store',
+            tel: r.tel || '',
+            menus: Array.isArray(r.menus) ? r.menus : [],
+          }));
+        }
+      } catch (e) {
+        console.error('Error parsing stored restaurants:', e);
       }
-    });
-    return () => unsubscribe();
-  }, []);
+    }
+    return INITIAL_RESTAURANTS;
+  });
+
+  const [bookings, setBookings] = useState<Booking[]>(() => {
+    const saved = localStorage.getItem('app_bookings');
+    return saved ? JSON.parse(saved) : INITIAL_BOOKINGS;
+  });
+
+  const [notices, setNotices] = useState<Notice[]>(() => {
+    const saved = localStorage.getItem('app_notices');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      } catch (e) {
+        console.error('Error parsing stored notices:', e);
+      }
+    }
+    return INITIAL_NOTICES;
+  });
 
   const [themeConfig, setThemeConfig] = useState<ThemeConfig>(() => {
     const saved = localStorage.getItem('app_theme_config');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (!parsed.siteTitle || parsed.siteTitle === '신세계 퓨쳐앤드림 아카데미' || parsed.siteTitle === '스마트 그룹 점심 신청 센터') {
-          parsed.siteTitle = DEFAULT_THEME_CONFIG.siteTitle;
-        }
-        if (!parsed.siteSubtitle || parsed.siteSubtitle.includes('임직원') || parsed.siteSubtitle.includes('실시간 그룹 점심 예약')) {
-          parsed.siteSubtitle = DEFAULT_THEME_CONFIG.siteSubtitle;
-        }
-        if (!parsed.deadlineTime || parsed.deadlineTime === '11:30') {
-          parsed.deadlineTime = '10:30';
-        }
         return { ...DEFAULT_THEME_CONFIG, ...parsed };
       } catch (e) {
-        return DEFAULT_THEME_CONFIG;
+        console.error('Error parsing stored themeConfig:', e);
       }
     }
     return DEFAULT_THEME_CONFIG;
@@ -68,12 +87,9 @@ export default function App() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (parsed.metaTitle?.includes('신세계 퓨쳐앤드림') || parsed.metaTitle?.includes('그룹 점심 신청')) {
-          return DEFAULT_SEO_CONFIG;
-        }
         return { ...DEFAULT_SEO_CONFIG, ...parsed };
-      } catch {
-        return DEFAULT_SEO_CONFIG;
+      } catch (e) {
+        console.error('Error parsing stored seoConfig:', e);
       }
     }
     return DEFAULT_SEO_CONFIG;
@@ -190,6 +206,14 @@ export default function App() {
     setBookings((prev) => [newBooking, ...prev]);
   };
 
+  const handleSaveAllAdminData = () => {
+    localStorage.setItem('app_restaurants', JSON.stringify(restaurants));
+    localStorage.setItem('app_theme_config', JSON.stringify(themeConfig));
+    localStorage.setItem('app_notices', JSON.stringify(notices));
+    localStorage.setItem('app_seo_config', JSON.stringify(seoConfig));
+    localStorage.setItem('app_bookings', JSON.stringify(bookings));
+  };
+
   const totalHeadcount = bookings.reduce((sum, b) => sum + b.headcount, 0);
 
   const scrollToForm = () => {
@@ -300,6 +324,7 @@ export default function App() {
               seoConfig={seoConfig}
               onUpdateSeoConfig={setSeoConfig}
               onCloseAdmin={() => setIsAdminMode(false)}
+              onSaveAll={handleSaveAllAdminData}
             />
 
             {/* Also show summary widget underneath in admin mode for quick glance */}

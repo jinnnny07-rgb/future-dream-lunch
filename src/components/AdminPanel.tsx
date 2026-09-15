@@ -17,7 +17,10 @@ import {
   ExternalLink,
   Save,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  ArrowRight,
+  X,
+  CheckCircle
 } from 'lucide-react';
 import { Restaurant, MenuItem, Booking, Notice, ThemeConfig, SeoConfig } from '../types';
 import { formatKRW, generateRestaurantReservationText, copyToClipboard } from '../utils';
@@ -35,6 +38,7 @@ interface AdminPanelProps {
   seoConfig: SeoConfig;
   onUpdateSeoConfig: (updated: SeoConfig) => void;
   onCloseAdmin: () => void;
+  onSaveAll?: () => void;
 }
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({
@@ -50,9 +54,57 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   seoConfig,
   onUpdateSeoConfig,
   onCloseAdmin,
+  onSaveAll,
 }) => {
   const [activeTab, setActiveTab] = useState<'summary' | 'restaurants' | 'notices' | 'design' | 'seo'>('summary');
   const [copiedSuccess, setCopiedSuccess] = useState<string | null>(null);
+
+  // Save Toast Feedback
+  const [saveToast, setSaveToast] = useState<{
+    show: boolean;
+    message: string;
+  } | null>(null);
+
+  const triggerSaveNotification = (msg: string) => {
+    setSaveToast({ show: true, message: msg });
+    setTimeout(() => {
+      setSaveToast(null);
+    }, 4500);
+  };
+
+  // Direct localStorage helper so changes strictly survive page refresh (F5)
+  const persistToStorage = (
+    updatedRestaurants = restaurants,
+    updatedTheme = themeConfig,
+    updatedNotices = notices,
+    updatedSeo = seoConfig,
+    updatedBookings = bookings
+  ) => {
+    try {
+      localStorage.setItem('app_restaurants', JSON.stringify(updatedRestaurants));
+      localStorage.setItem('app_theme_config', JSON.stringify(updatedTheme));
+      localStorage.setItem('app_notices', JSON.stringify(updatedNotices));
+      localStorage.setItem('app_seo_config', JSON.stringify(updatedSeo));
+      localStorage.setItem('app_bookings', JSON.stringify(updatedBookings));
+    } catch (err) {
+      console.error('Failed to write to localStorage:', err);
+    }
+  };
+
+  const handleSaveAll = () => {
+    persistToStorage();
+    if (onSaveAll) onSaveAll();
+    triggerSaveNotification('모든 관리자 수정사항(식당 정보, 메뉴, 디자인 테마, 공지사항)이 저장되었습니다.');
+  };
+
+  const handleSaveAndGoToForm = () => {
+    persistToStorage();
+    if (onSaveAll) onSaveAll();
+    triggerSaveNotification('수정사항이 저장되었습니다. 신청 화면으로 이동합니다.');
+    setTimeout(() => {
+      onCloseAdmin();
+    }, 300);
+  };
 
   // Notice Form State
   const [noticeForm, setNoticeForm] = useState<{
@@ -69,10 +121,26 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   });
   const [isEditingNotice, setIsEditingNotice] = useState<boolean>(false);
 
-  // Restaurant Form State
+  // Restaurant & Menu Form State
   const [selectedRestIdForMenuEdit, setSelectedRestIdForMenuEdit] = useState<string>(
     restaurants[0]?.id || ''
   );
+
+  // Inline menu item editing state
+  const [editingMenuId, setEditingMenuId] = useState<string | null>(null);
+  const [editMenuForm, setEditMenuForm] = useState<{
+    name: string;
+    price: number;
+    description: string;
+    isPopular: boolean;
+  }>({
+    name: '',
+    price: 9000,
+    description: '',
+    isPopular: false,
+  });
+
+  // Add new menu item form
   const [newMenuForm, setNewMenuForm] = useState<{
     name: string;
     price: number;
@@ -83,6 +151,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     price: 9000,
     description: '',
     isPopular: false,
+  });
+
+  // Add new restaurant modal/form state
+  const [isAddingRestaurant, setIsAddingRestaurant] = useState<boolean>(false);
+  const [newRestaurantForm, setNewRestaurantForm] = useState<{
+    name: string;
+    category: string;
+    description: string;
+    tel: string;
+  }>({
+    name: '',
+    category: '한식 / 일반음식점',
+    description: '',
+    tel: '',
   });
 
   // SEO Form State
@@ -106,11 +188,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const handleStatusChange = (bookingId: string, newStatus: Booking['status']) => {
     const updated = bookings.map((b) => (b.id === bookingId ? { ...b, status: newStatus } : b));
     onUpdateBookings(updated);
+    persistToStorage(restaurants, themeConfig, notices, seoConfig, updated);
   };
 
   const handleDeleteBooking = (bookingId: string) => {
     if (confirm('정말로 이 점심 신청 내역을 삭제하시겠습니까?')) {
-      onUpdateBookings(bookings.filter((b) => b.id !== bookingId));
+      const updated = bookings.filter((b) => b.id !== bookingId);
+      onUpdateBookings(updated);
+      persistToStorage(restaurants, themeConfig, notices, seoConfig, updated);
+      triggerSaveNotification('점심 신청 내역이 삭제 및 저장되었습니다.');
     }
   };
 
@@ -119,19 +205,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     e.preventDefault();
     if (!noticeForm.title.trim() || !noticeForm.content.trim()) return;
 
+    let updatedNotices: Notice[];
     if (isEditingNotice && noticeForm.id) {
-      onUpdateNotices(
-        notices.map((n) =>
-          n.id === noticeForm.id
-            ? {
-                ...n,
-                title: noticeForm.title,
-                content: noticeForm.content,
-                type: noticeForm.type,
-                isPinned: noticeForm.isPinned,
-              }
-            : n
-        )
+      updatedNotices = notices.map((n) =>
+        n.id === noticeForm.id
+          ? {
+              ...n,
+              title: noticeForm.title,
+              content: noticeForm.content,
+              type: noticeForm.type,
+              isPinned: noticeForm.isPinned,
+            }
+          : n
       );
     } else {
       const newNotice: Notice = {
@@ -142,11 +227,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         isPinned: noticeForm.isPinned,
         date: '방금 전',
       };
-      onUpdateNotices([newNotice, ...notices]);
+      updatedNotices = [newNotice, ...notices];
     }
 
+    onUpdateNotices(updatedNotices);
+    persistToStorage(restaurants, themeConfig, updatedNotices);
     setNoticeForm({ title: '', content: '', type: 'notice', isPinned: true });
     setIsEditingNotice(false);
+    triggerSaveNotification('공지사항이 안전하게 저장되었습니다.');
   };
 
   const handleEditNotice = (n: Notice) => {
@@ -161,11 +249,126 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   const handleDeleteNotice = (id: string) => {
-    onUpdateNotices(notices.filter((n) => n.id !== id));
+    const updated = notices.filter((n) => n.id !== id);
+    onUpdateNotices(updated);
+    persistToStorage(restaurants, themeConfig, updated);
+    triggerSaveNotification('공지사항이 삭제 및 저장되었습니다.');
+  };
+
+  // Restaurant Basic Info Field Update
+  const handleUpdateRestaurantField = (
+    restId: string,
+    field: keyof Restaurant,
+    value: string
+  ) => {
+    const updated = restaurants.map((r) =>
+      r.id === restId ? { ...r, [field]: value } : r
+    );
+    onUpdateRestaurants(updated);
+  };
+
+  // Save Restaurant & Menus explicitly
+  const handleSaveRestaurantChanges = (restName: string) => {
+    persistToStorage(restaurants);
+    if (onSaveAll) onSaveAll();
+    triggerSaveNotification(`[${restName}] 식당 정보와 메뉴가 저장되었습니다. 새로고침해도 유지됩니다.`);
+  };
+
+  // Add Restaurant
+  const handleAddRestaurant = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newRestaurantForm.name.trim()) return;
+
+    const newRest: Restaurant = {
+      id: 'rest-' + Date.now(),
+      name: newRestaurantForm.name.trim(),
+      category: newRestaurantForm.category.trim() || '일반음식점',
+      description: newRestaurantForm.description.trim() || '신규 등록 식당',
+      tel: newRestaurantForm.tel.trim() || '',
+      voucherOnly: false,
+      voucherNotice: '',
+      iconName: 'Store',
+      menus: [
+        {
+          id: 'm-' + Date.now(),
+          name: '대표 메뉴',
+          price: 10000,
+          description: '기본 식사 메뉴',
+          isPopular: true,
+        },
+      ],
+    };
+
+    const updated = [...restaurants, newRest];
+    onUpdateRestaurants(updated);
+    persistToStorage(updated);
+    setSelectedRestIdForMenuEdit(newRest.id);
+    setIsAddingRestaurant(false);
+    setNewRestaurantForm({ name: '', category: '한식 / 일반음식점', description: '', tel: '' });
+    triggerSaveNotification(`새 식당 '${newRest.name}'이 추가 및 저장되었습니다.`);
+  };
+
+  // Delete Restaurant
+  const handleDeleteRestaurant = (restId: string) => {
+    const target = restaurants.find((r) => r.id === restId);
+    if (restaurants.length <= 1) {
+      alert('최소 1개 이상의 식당이 유지되어야 합니다.');
+      return;
+    }
+    if (!confirm(`'${target?.name}' 식당을 정말로 삭제하시겠습니까? 관련 메뉴도 함께 삭제됩니다.`)) {
+      return;
+    }
+
+    const updated = restaurants.filter((r) => r.id !== restId);
+    onUpdateRestaurants(updated);
+    persistToStorage(updated);
+    setSelectedRestIdForMenuEdit(updated[0].id);
+    triggerSaveNotification(`'${target?.name}' 식당이 삭제 및 저장되었습니다.`);
+  };
+
+  // Start editing existing menu item
+  const handleStartEditMenu = (item: MenuItem) => {
+    setEditingMenuId(item.id);
+    setEditMenuForm({
+      name: item.name,
+      price: item.price,
+      description: item.description || '',
+      isPopular: !!item.isPopular,
+    });
+  };
+
+  // Save edited menu item
+  const handleSaveEditedMenu = (restId: string, menuId: string) => {
+    if (!editMenuForm.name.trim()) return;
+
+    const updated = restaurants.map((r) => {
+      if (r.id === restId) {
+        return {
+          ...r,
+          menus: r.menus.map((m) =>
+            m.id === menuId
+              ? {
+                  ...m,
+                  name: editMenuForm.name.trim(),
+                  price: Number(editMenuForm.price) || 0,
+                  description: editMenuForm.description.trim(),
+                  isPopular: editMenuForm.isPopular,
+                }
+              : m
+          ),
+        };
+      }
+      return r;
+    });
+
+    onUpdateRestaurants(updated);
+    persistToStorage(updated);
+    setEditingMenuId(null);
+    triggerSaveNotification(`'${editMenuForm.name}' 메뉴가 수정 및 저장되었습니다.`);
   };
 
   // Menu Add
-  const handleAddMenu = (e: React.FormEvent) => {
+  const handleAddMenu = (e: React.FormEvent, restId: string) => {
     e.preventDefault();
     if (!newMenuForm.name.trim()) return;
 
@@ -177,18 +380,26 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       isPopular: newMenuForm.isPopular,
     };
 
+    const targetRest = restaurants.find((r) => r.id === restId);
     const updated = restaurants.map((r) => {
-      if (r.id === selectedRestIdForMenuEdit) {
+      if (r.id === restId) {
         return { ...r, menus: [...r.menus, newItem] };
       }
       return r;
     });
 
     onUpdateRestaurants(updated);
+    persistToStorage(updated);
     setNewMenuForm({ name: '', price: 9000, description: '', isPopular: false });
+    triggerSaveNotification(`[${targetRest?.name || '식당'}]에 '${newItem.name}' 메뉴가 등록 및 저장되었습니다.`);
   };
 
+  // Menu Delete
   const handleDeleteMenu = (restId: string, menuId: string) => {
+    const targetRest = restaurants.find((r) => r.id === restId);
+    const targetMenu = targetRest?.menus.find((m) => m.id === menuId);
+    if (!confirm(`'${targetMenu?.name || '메뉴'}'를 정말로 삭제하시겠습니까?`)) return;
+
     const updated = restaurants.map((r) => {
       if (r.id === restId) {
         return { ...r, menus: r.menus.filter((m) => m.id !== menuId) };
@@ -196,13 +407,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       return r;
     });
     onUpdateRestaurants(updated);
+    persistToStorage(updated);
+    triggerSaveNotification(`'${targetMenu?.name || '메뉴'}'가 삭제 및 저장되었습니다.`);
+  };
+
+  // Save Theme Config
+  const handleSaveTheme = () => {
+    persistToStorage(restaurants, themeConfig);
+    if (onSaveAll) onSaveAll();
+    triggerSaveNotification('디자인 테마 및 1인당 식대 지원 설정이 저장되었습니다. 새로고침해도 유지됩니다.');
   };
 
   // SEO Save
   const handleSaveSeo = (e: React.FormEvent) => {
     e.preventDefault();
     onUpdateSeoConfig(seoForm);
+    persistToStorage(restaurants, themeConfig, notices, seoForm);
     setSeoSavedNotice(true);
+    triggerSaveNotification('SEO 메타태그 설정이 저장되었습니다.');
     setTimeout(() => setSeoSavedNotice(false), 3000);
   };
 
@@ -228,22 +450,72 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             <div className="flex items-center space-x-2">
               <h2 className="text-lg font-bold">통합 관리자 대시보드 (Admin CMS)</h2>
               <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-rose-500 text-white">
-                관리자 권한
+                관리자 모드
               </span>
             </div>
             <p className="text-xs text-indigo-200">
-              실시간 예약 집계, 1클릭 통화/문자 요약문 복사, 식당 및 메뉴 관리, 공지사항, 테마 및 SEO 설정
+              수정한 내용(식당, 메뉴, 가격, 1인당 식대)은 저장버튼을 누르면 새로고침 후에도 신청폼에 100% 유지됩니다.
             </p>
           </div>
         </div>
 
-        <button
-          onClick={onCloseAdmin}
-          className="px-4 py-2 rounded-xl text-xs font-bold bg-white/10 hover:bg-white/20 text-white transition-colors"
-        >
-          신청 화면으로 돌아가기
-        </button>
+        {/* Global Action Buttons */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            type="button"
+            id="admin-save-all-button"
+            onClick={handleSaveAll}
+            className="px-4 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg flex items-center space-x-2 transition-all transform active:scale-95 cursor-pointer ring-2 ring-emerald-400/50"
+            title="현재까지 수정한 식당, 메뉴, 가격, 디자인 설정을 브라우저에 즉시 저장합니다"
+          >
+            <Save className="w-4 h-4" />
+            <span>수정사항 저장하기 (F5 유지)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleSaveAndGoToForm}
+            className="px-3.5 py-2.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md flex items-center space-x-1.5 transition-all cursor-pointer"
+            title="저장 후 신청폼으로 이동하여 반영된 결과를 바로 확인합니다"
+          >
+            <span>저장 후 신청폼으로 이동</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+
+          <button
+            type="button"
+            onClick={onCloseAdmin}
+            className="px-3.5 py-2.5 rounded-xl text-xs font-bold bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
+          >
+            닫기
+          </button>
+        </div>
       </div>
+
+      {/* Persistent Save Notification Toast Banner */}
+      {saveToast && (
+        <div className="mx-6 my-4 p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/80 border-2 border-emerald-400 dark:border-emerald-600 text-emerald-900 dark:text-emerald-100 flex flex-wrap items-center justify-between gap-3 shadow-lg animate-fade-in">
+          <div className="flex items-center space-x-3 text-xs sm:text-sm font-bold">
+            <CheckCircle2 className="w-6 h-6 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <div>
+              <span className="block text-sm font-black text-emerald-800 dark:text-emerald-200">
+                {saveToast.message}
+              </span>
+              <span className="text-xs font-medium text-emerald-700 dark:text-emerald-300">
+                ✅ 브라우저 로컬 저장소에 안전하게 기록되었습니다. 새로고침(F5)을 하거나 신청폼으로 이동해도 수정한 내용이 그대로 적용됩니다!
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onCloseAdmin}
+            className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md transition-colors flex items-center space-x-1.5 cursor-pointer"
+          >
+            <span>신청폼에서 바로 확인</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* Tab Navigation */}
       <div className="flex overflow-x-auto border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 p-2 gap-1 text-xs">
@@ -464,165 +736,495 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         {/* ==================================================== */}
         {activeTab === 'restaurants' && (
           <div className="space-y-6 animate-fade-in">
-            {/* Restaurant Selector for Menu CMS */}
+            {/* Top Toolbar: Restaurant Switcher & Add Restaurant */}
             <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-200 dark:border-slate-800">
               <div>
-                <h3 className="font-bold text-sm text-slate-800 dark:text-slate-100">
-                  식당 선택 및 메뉴/가격 편집
+                <h3 className="font-bold text-sm text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                  <Store className="w-4 h-4 text-indigo-600" />
+                  <span>식당 및 메뉴 관리 (CMS)</span>
                 </h3>
-                <p className="text-xs text-slate-500">
-                  선택한 식당의 메뉴 목록을 실시간으로 추가, 수정, 삭제할 수 있습니다
+                <p className="text-xs text-slate-500 mt-0.5">
+                  식당 이름, 카테고리, 전화번호, 소개 및 메뉴/가격을 수정하고 저장할 수 있습니다.
                 </p>
               </div>
 
-              <div className="flex gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {restaurants.map((r) => (
                   <button
                     key={r.id}
-                    onClick={() => setSelectedRestIdForMenuEdit(r.id)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${
-                      selectedRestIdForMenuEdit === r.id
-                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                    type="button"
+                    onClick={() => {
+                      setSelectedRestIdForMenuEdit(r.id);
+                      setEditingMenuId(null);
+                      setIsAddingRestaurant(false);
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                      selectedRestIdForMenuEdit === r.id && !isAddingRestaurant
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
                     }`}
                   >
-                    {r.name}
+                    {r.name} ({r.menus.length})
                   </button>
                 ))}
+
+                <button
+                  type="button"
+                  onClick={() => setIsAddingRestaurant(!isAddingRestaurant)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center space-x-1 cursor-pointer ${
+                    isAddingRestaurant
+                      ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
+                      : 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100'
+                  }`}
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>새 식당 추가</span>
+                </button>
               </div>
             </div>
 
-            {/* Active Restaurant Details & Voucher Settings */}
+            {/* Add New Restaurant Form Modal/Section */}
+            {isAddingRestaurant && (
+              <div className="p-5 rounded-2xl border-2 border-indigo-300 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-950/30 space-y-4 animate-fade-in shadow-sm">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-bold text-sm text-indigo-900 dark:text-indigo-200 flex items-center space-x-2">
+                    <Store className="w-4 h-4 text-indigo-600" />
+                    <span>신규 식당 등록</span>
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => setIsAddingRestaurant(false)}
+                    className="p-1 rounded-lg text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleAddRestaurant} className="space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                        식당명 <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={newRestaurantForm.name}
+                        onChange={(e) => setNewRestaurantForm({ ...newRestaurantForm, name: e.target.value })}
+                        placeholder="예: 맛있는 연수원 식당"
+                        className="w-full p-2.5 rounded-xl border bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-xs focus:ring-2 focus:ring-indigo-500"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                        업종 / 카테고리
+                      </label>
+                      <input
+                        type="text"
+                        value={newRestaurantForm.category}
+                        onChange={(e) => setNewRestaurantForm({ ...newRestaurantForm, category: e.target.value })}
+                        placeholder="예: 한식 / 찌개 & 직화구이 전문"
+                        className="w-full p-2.5 rounded-xl border bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-xs"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                        전화번호 (선택)
+                      </label>
+                      <input
+                        type="text"
+                        value={newRestaurantForm.tel}
+                        onChange={(e) => setNewRestaurantForm({ ...newRestaurantForm, tel: e.target.value })}
+                        placeholder="예: 031-123-4567"
+                        className="w-full p-2.5 rounded-xl border bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      식당 소개 및 위치 설명
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={newRestaurantForm.description}
+                      onChange={(e) => setNewRestaurantForm({ ...newRestaurantForm, description: e.target.value })}
+                      placeholder="예: 연수원 도보 5분 거리, 단체석 완비"
+                      className="w-full p-2.5 rounded-xl border bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-xs"
+                    />
+                  </div>
+
+                  <div className="flex justify-end space-x-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsAddingRestaurant(false)}
+                      className="px-4 py-2 rounded-xl text-xs font-semibold border border-slate-300 dark:border-slate-700 hover:bg-slate-100 cursor-pointer"
+                    >
+                      취소
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-sm flex items-center space-x-1.5 cursor-pointer"
+                    >
+                      <Save className="w-3.5 h-3.5" />
+                      <span>식당 등록 및 저장</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            {/* Active Restaurant Details & Menu CMS */}
             {(() => {
               const currentRest = restaurants.find((r) => r.id === selectedRestIdForMenuEdit) || restaurants[0];
               if (!currentRest) return null;
 
               return (
-                <div className="space-y-5">
-                  {/* Restaurant Details Card */}
-                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 space-y-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="space-y-6">
+                  {/* Card 1: Restaurant Basic Info Editor */}
+                  <div className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-200 dark:border-slate-800">
                       <div className="flex items-center space-x-2">
-                        <Store className="w-5 h-5 text-indigo-500" />
+                        <Store className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                         <h4 className="font-bold text-base text-slate-900 dark:text-slate-100">
-                          {currentRest.name} 설정
+                          [{currentRest.name}] 기본 정보 수정
                         </h4>
                       </div>
 
-                      <label className="flex items-center space-x-2 text-xs font-semibold cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={currentRest.voucherOnly}
-                          onChange={(e) => {
-                            const updated = restaurants.map((r) =>
-                              r.id === currentRest.id ? { ...r, voucherOnly: e.target.checked } : r
-                            );
-                            onUpdateRestaurants(updated);
-                          }}
-                          className="w-4 h-4 text-indigo-600 rounded"
-                        />
-                        <span className="text-slate-800 dark:text-slate-200">
-                          식권 전용 식당으로 지정
-                        </span>
-                      </label>
+                      <div className="flex items-center space-x-2">
+                        <button
+                          type="button"
+                          onClick={() => handleSaveRestaurantChanges(currentRest.name)}
+                          className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-sm flex items-center space-x-1.5 transition-all cursor-pointer"
+                        >
+                          <Save className="w-3.5 h-3.5" />
+                          <span>식당 정보 저장하기</span>
+                        </button>
+
+                        {restaurants.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteRestaurant(currentRest.id)}
+                            className="px-3 py-1.5 rounded-xl border border-rose-300 dark:border-rose-900 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950 text-xs font-semibold transition-colors flex items-center space-x-1 cursor-pointer"
+                            title="이 식당을 삭제합니다"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>식당 삭제</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
 
-                    {/* Voucher Notice custom text if voucherOnly */}
-                    {currentRest.voucherOnly && (
-                      <div className="space-y-1">
-                        <label className="text-xs font-medium text-slate-600 dark:text-slate-300">
-                          식권 전용 자동 노출 안내 문구:
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                          식당 이름 <span className="text-rose-500">*</span>
                         </label>
                         <input
                           type="text"
-                          value={currentRest.voucherNotice || ''}
-                          onChange={(e) => {
-                            const updated = restaurants.map((r) =>
-                              r.id === currentRest.id ? { ...r, voucherNotice: e.target.value } : r
-                            );
-                            onUpdateRestaurants(updated);
-                          }}
-                          className="w-full p-2.5 rounded-xl border bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-xs"
-                          placeholder="식권 전용 식당 안내 문구를 입력하세요"
+                          value={currentRest.name}
+                          onChange={(e) => handleUpdateRestaurantField(currentRest.id, 'name', e.target.value)}
+                          className="w-full p-2.5 rounded-xl border bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500"
+                          placeholder="식당명"
                         />
                       </div>
-                    )}
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                          업종 / 카테고리
+                        </label>
+                        <input
+                          type="text"
+                          value={currentRest.category}
+                          onChange={(e) => handleUpdateRestaurantField(currentRest.id, 'category', e.target.value)}
+                          className="w-full p-2.5 rounded-xl border bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-100"
+                          placeholder="예: 한식 / 찌개 & 직화구이 전문"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                          대표 전화번호
+                        </label>
+                        <input
+                          type="text"
+                          value={currentRest.tel || ''}
+                          onChange={(e) => handleUpdateRestaurantField(currentRest.id, 'tel', e.target.value)}
+                          className="w-full p-2.5 rounded-xl border bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-100"
+                          placeholder="예: 031-123-4567"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                        식당 소개 및 특이사항 안내
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={currentRest.description}
+                        onChange={(e) => handleUpdateRestaurantField(currentRest.id, 'description', e.target.value)}
+                        className="w-full p-2.5 rounded-xl border bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-100"
+                        placeholder="식당 특징 및 신청 시 유의사항 등을 입력하세요"
+                      />
+                    </div>
                   </div>
 
-                  {/* Add New Menu Form */}
-                  <form onSubmit={handleAddMenu} className="p-4 rounded-2xl border border-indigo-200 dark:border-indigo-900 bg-indigo-50/40 dark:bg-indigo-950/20 space-y-3">
+                  {/* Card 2: Registered Menus List with Inline Edit */}
+                  <div className="rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xs bg-white dark:bg-slate-900">
+                    <div className="px-5 py-3.5 bg-slate-100 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                      <div>
+                        <span className="font-bold text-sm text-slate-800 dark:text-slate-200">
+                          [{currentRest.name}] 메뉴 목록 및 가격 수정 ({currentRest.menus.length}개)
+                        </span>
+                        <p className="text-[11px] text-slate-500">
+                          수정 버튼을 누르면 메뉴명과 가격을 즉시 변경할 수 있습니다.
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleSaveRestaurantChanges(currentRest.name)}
+                        className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center space-x-1 cursor-pointer"
+                      >
+                        <Save className="w-3.5 h-3.5" />
+                        <span>메뉴 저장</span>
+                      </button>
+                    </div>
+
+                    <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {currentRest.menus.map((item) => (
+                        <div key={item.id} className="p-4 transition-colors">
+                          {editingMenuId === item.id ? (
+                            /* Inline Edit Form for this Menu Item */
+                            <div className="p-3.5 rounded-xl bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 space-y-3">
+                              <div className="flex items-center justify-between">
+                                <span className="font-bold text-xs text-indigo-900 dark:text-indigo-200 flex items-center gap-1">
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                  메뉴 정보 수정 중: {item.name}
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                                <div>
+                                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                                    메뉴명
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={editMenuForm.name}
+                                    onChange={(e) => setEditMenuForm({ ...editMenuForm, name: e.target.value })}
+                                    className="w-full p-2 rounded-lg border bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-xs font-bold"
+                                    required
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                                    가격 (원)
+                                  </label>
+                                  <input
+                                    type="number"
+                                    value={editMenuForm.price}
+                                    onChange={(e) => setEditMenuForm({ ...editMenuForm, price: Number(e.target.value) })}
+                                    className="w-full p-2 rounded-lg border bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-xs font-bold"
+                                    required
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                                    메뉴 설명 (선택)
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={editMenuForm.description}
+                                    onChange={(e) => setEditMenuForm({ ...editMenuForm, description: e.target.value })}
+                                    placeholder="예: 공기밥 포함"
+                                    className="w-full p-2 rounded-lg border bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-xs"
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="flex items-center justify-between pt-1">
+                                <label className="flex items-center space-x-2 text-xs cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={editMenuForm.isPopular}
+                                    onChange={(e) => setEditMenuForm({ ...editMenuForm, isPopular: e.target.checked })}
+                                    className="w-4 h-4 text-indigo-600 rounded"
+                                  />
+                                  <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                    인기 추천 메뉴로 강조 표시
+                                  </span>
+                                </label>
+
+                                <div className="flex items-center space-x-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingMenuId(null)}
+                                    className="px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-xs font-semibold hover:bg-slate-100 cursor-pointer"
+                                  >
+                                    취소
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSaveEditedMenu(currentRest.id, item.id)}
+                                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center space-x-1 cursor-pointer"
+                                  >
+                                    <Save className="w-3.5 h-3.5" />
+                                    <span>수정 저장</span>
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            /* Regular Display of Menu Item */
+                            <div className="flex items-center justify-between gap-3 text-xs">
+                              <div>
+                                <div className="flex items-center space-x-2">
+                                  <span className="font-bold text-sm text-slate-900 dark:text-slate-100">
+                                    {item.name}
+                                  </span>
+                                  {item.isPopular && (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-300">
+                                      인기
+                                    </span>
+                                  )}
+                                </div>
+                                {item.description && (
+                                  <p className="text-[11px] text-slate-400 mt-0.5">{item.description}</p>
+                                )}
+                              </div>
+
+                              <div className="flex items-center space-x-3">
+                                <span className="font-extrabold text-sm text-indigo-600 dark:text-indigo-400">
+                                  {formatKRW(item.price)}
+                                </span>
+
+                                <div className="flex items-center space-x-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleStartEditMenu(item)}
+                                    className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-indigo-50 dark:hover:bg-indigo-950 text-indigo-600 dark:text-indigo-300 transition-colors cursor-pointer"
+                                    title="메뉴 및 가격 수정"
+                                  >
+                                    <Edit3 className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteMenu(currentRest.id, item.id)}
+                                    className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-rose-50 dark:hover:bg-rose-950 text-rose-500 transition-colors cursor-pointer"
+                                    title="메뉴 삭제"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Card 3: Add New Menu Form */}
+                  <form
+                    onSubmit={(e) => handleAddMenu(e, currentRest.id)}
+                    className="p-5 rounded-2xl border border-indigo-200 dark:border-indigo-900 bg-indigo-50/40 dark:bg-indigo-950/20 space-y-3"
+                  >
                     <h5 className="font-bold text-xs text-indigo-900 dark:text-indigo-200 flex items-center">
                       <Plus className="w-4 h-4 mr-1 text-indigo-600" />
                       [{currentRest.name}] 신규 메뉴 추가하기
                     </h5>
+
                     <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5">
                       <div className="sm:col-span-2">
+                        <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                          메뉴명 <span className="text-rose-500">*</span>
+                        </label>
                         <input
                           type="text"
-                          placeholder="메뉴명 (예: 치즈 돈까스)"
+                          placeholder="예: 치즈 돈까스 정식"
                           value={newMenuForm.name}
                           onChange={(e) => setNewMenuForm({ ...newMenuForm, name: e.target.value })}
-                          className="w-full p-2.5 rounded-xl border bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-xs"
+                          className="w-full p-2.5 rounded-xl border bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-xs font-semibold focus:ring-2 focus:ring-indigo-500"
                           required
                         />
                       </div>
+
                       <div>
+                        <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                          가격 (원) <span className="text-rose-500">*</span>
+                        </label>
                         <input
                           type="number"
                           placeholder="가격(원)"
                           value={newMenuForm.price}
                           onChange={(e) => setNewMenuForm({ ...newMenuForm, price: Number(e.target.value) })}
-                          className="w-full p-2.5 rounded-xl border bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-xs"
+                          className="w-full p-2.5 rounded-xl border bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-xs font-semibold focus:ring-2 focus:ring-indigo-500"
                           required
                         />
                       </div>
+
                       <div>
-                        <button
-                          type="submit"
-                          className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-xs"
-                        >
-                          메뉴 등록
-                        </button>
+                        <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                          간단 설명 (선택)
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="예: 특제소스 포함"
+                          value={newMenuForm.description}
+                          onChange={(e) => setNewMenuForm({ ...newMenuForm, description: e.target.value })}
+                          className="w-full p-2.5 rounded-xl border bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-xs"
+                        />
                       </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between pt-1 gap-2">
+                      <label className="flex items-center space-x-2 text-xs cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={newMenuForm.isPopular}
+                          onChange={(e) => setNewMenuForm({ ...newMenuForm, isPopular: e.target.checked })}
+                          className="w-4 h-4 text-indigo-600 rounded"
+                        />
+                        <span className="font-semibold text-slate-700 dark:text-slate-300">
+                          인기 메뉴 뱃지 추가
+                        </span>
+                      </label>
+
+                      <button
+                        type="submit"
+                        className="py-2.5 px-5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-sm flex items-center space-x-1.5 cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>메뉴 등록 및 저장</span>
+                      </button>
                     </div>
                   </form>
 
-                  {/* Menu Items List */}
-                  <div className="rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-                    <div className="px-4 py-3 bg-slate-100 dark:bg-slate-900 font-bold text-xs text-slate-700 dark:text-slate-300">
-                      등록된 메뉴 목록 ({currentRest.menus.length}개)
+                  {/* Big Save Button at bottom of Restaurant Tab */}
+                  <div className="p-4 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <span className="font-bold text-sm text-slate-800 dark:text-slate-100 block">
+                        [{currentRest.name}] 모든 수정내역 영구 저장
+                      </span>
+                      <p className="text-xs text-slate-500">
+                        저장버튼을 누르면 브라우저에 안전하게 보관되어 새로고침(F5) 후에도 신청폼에 그대로 반영됩니다.
+                      </p>
                     </div>
-                    <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {currentRest.menus.map((item) => (
-                        <div key={item.id} className="p-3.5 flex items-center justify-between gap-3 text-xs">
-                          <div>
-                            <span className="font-bold text-sm text-slate-800 dark:text-slate-100">
-                              {item.name}
-                            </span>
-                            {item.isPopular && (
-                              <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-600">
-                                인기
-                              </span>
-                            )}
-                            {item.description && (
-                              <p className="text-[11px] text-slate-400 mt-0.5">{item.description}</p>
-                            )}
-                          </div>
-                          <div className="flex items-center space-x-3">
-                            <span className="font-extrabold text-slate-900 dark:text-slate-100">
-                              {formatKRW(item.price)}
-                            </span>
-                            <button
-                              onClick={() => handleDeleteMenu(currentRest.id, item.id)}
-                              className="p-1 text-slate-400 hover:text-rose-600 rounded"
-                              title="삭제"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleSaveRestaurantChanges(currentRest.name)}
+                      className="px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg flex items-center space-x-2 transition-all transform active:scale-95 cursor-pointer ring-2 ring-emerald-400/50"
+                    >
+                      <Save className="w-4 h-4" />
+                      <span>[{currentRest.name}] 식당 &amp; 메뉴 전체 저장</span>
+                    </button>
                   </div>
                 </div>
               );
