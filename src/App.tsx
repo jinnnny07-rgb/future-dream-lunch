@@ -32,6 +32,41 @@ import { ShieldCheck, User, Sparkles, Lock } from 'lucide-react';
 
 const MENU_DATA_VERSION = 'v3_20260916_clean_menu_and_memo';
 
+const getDeletedBookingIds = (): Set<string> => {
+  try {
+    const raw = localStorage.getItem('app_deleted_booking_ids');
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) return new Set(arr);
+    }
+  } catch (e) {
+    console.error(e);
+  }
+  return new Set();
+};
+
+const markBookingAsDeleted = (id: string) => {
+  try {
+    const set = getDeletedBookingIds();
+    set.add(id);
+    localStorage.setItem('app_deleted_booking_ids', JSON.stringify(Array.from(set)));
+  } catch (e) {
+    console.error(e);
+  }
+};
+
+const unmarkBookingAsDeleted = (id: string) => {
+  try {
+    const set = getDeletedBookingIds();
+    if (set.has(id)) {
+      set.delete(id);
+      localStorage.setItem('app_deleted_booking_ids', JSON.stringify(Array.from(set)));
+    }
+  } catch (e) {
+    console.error(e);
+  }
+};
+
 export default function App() {
   // Persistent State (localStorage with initial fallbacks)
   const [restaurants, setRestaurants] = useState<Restaurant[]>(() => {
@@ -183,7 +218,10 @@ export default function App() {
     // 1. Subscribe to Bookings from Firestore with robust local persistence protection
     const unsubscribeBookings = subscribeBookingsFromFirestore((remoteBookings) => {
       if (remoteBookings && Array.isArray(remoteBookings)) {
-        console.log('[Firestore Sync] Received remote bookings:', remoteBookings.length);
+        const deletedIds = getDeletedBookingIds();
+        const activeRemoteBookings = remoteBookings.filter((b) => !deletedIds.has(b.id));
+
+        console.log('[Firestore Sync] Received remote bookings:', remoteBookings.length, 'active:', activeRemoteBookings.length);
 
         setBookings((currentLocalBookings) => {
           // Read from localStorage to ensure no locally saved bookings are lost
@@ -192,8 +230,8 @@ export default function App() {
             const raw = localStorage.getItem('app_bookings');
             if (raw) {
               const parsed = JSON.parse(raw);
-              if (Array.isArray(parsed) && parsed.length > 0) {
-                storedBookings = parsed;
+              if (Array.isArray(parsed)) {
+                storedBookings = parsed.filter((b) => !deletedIds.has(b.id));
               }
             }
           } catch (e) {
@@ -201,34 +239,29 @@ export default function App() {
           }
 
           // Case 1: Remote is empty
-          if (remoteBookings.length === 0) {
-            // NEVER wipe out existing bookings when remote is empty!
-            // Instead, preserve stored bookings and seed them to Firestore.
-            if (storedBookings.length > 0) {
-              storedBookings.forEach((b) => {
+          if (activeRemoteBookings.length === 0) {
+            const nonDeletedStored = storedBookings.filter((b) => !deletedIds.has(b.id));
+            if (nonDeletedStored.length > 0) {
+              nonDeletedStored.forEach((b) => {
                 saveBookingToFirestore(b).catch(() => {});
               });
               try {
-                localStorage.setItem('app_bookings', JSON.stringify(storedBookings));
+                localStorage.setItem('app_bookings', JSON.stringify(nonDeletedStored));
               } catch (e) {
                 console.error(e);
               }
-              return storedBookings;
+              return nonDeletedStored;
             }
-            return currentLocalBookings;
+            return [];
           }
 
-          // Case 2: Remote has bookings -> Merge intelligently with local bookings
+          // Case 2: Remote has bookings -> Merge intelligently without resurrecting deleted
           const bookingMap = new Map<string, Booking>();
+          activeRemoteBookings.forEach((b) => bookingMap.set(b.id, b));
 
-          // Remote documents are authoritative for synced bookings
-          remoteBookings.forEach((b) => bookingMap.set(b.id, b));
-
-          // Preserve any local bookings that might not have finished uploading yet
           storedBookings.forEach((localB) => {
-            if (!bookingMap.has(localB.id)) {
+            if (!bookingMap.has(localB.id) && !deletedIds.has(localB.id)) {
               bookingMap.set(localB.id, localB);
-              // Backfill to Firestore
               saveBookingToFirestore(localB).catch(() => {});
             }
           });
@@ -369,6 +402,8 @@ export default function App() {
   };
 
   const handleAddBooking = async (newBooking: Booking) => {
+    unmarkBookingAsDeleted(newBooking.id);
+
     const sanitizedBooking: Booking = {
       ...newBooking,
       memo: newBooking.memo ? newBooking.memo.trim() : '',
@@ -421,6 +456,8 @@ export default function App() {
   };
 
   const handleDeleteBooking = async (bookingId: string) => {
+    markBookingAsDeleted(bookingId);
+
     setBookings((prev) => {
       const updated = prev.filter((b) => b.id !== bookingId);
       try {

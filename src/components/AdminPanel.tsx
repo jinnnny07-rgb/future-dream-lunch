@@ -215,16 +215,50 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     persistToStorage(restaurants, themeConfig, notices, seoConfig, updated);
   };
 
-  const handleDeleteBooking = (bookingId: string) => {
-    if (confirm('정말로 이 점심 신청 내역을 삭제하시겠습니까?')) {
-      if (onDeleteBooking) {
-        onDeleteBooking(bookingId);
-      }
-      const updated = bookings.filter((b) => b.id !== bookingId);
-      onUpdateBookings(updated);
-      persistToStorage(restaurants, themeConfig, notices, seoConfig, updated);
-      triggerSaveNotification('점심 신청 내역이 삭제 및 저장되었습니다.');
+  // Modal states for deleting bookings
+  const [bookingToDelete, setBookingToDelete] = useState<Booking | null>(null);
+  const [selectedBookingIds, setSelectedBookingIds] = useState<string[]>([]);
+  const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState<boolean>(false);
+
+  const confirmDeleteBooking = (bookingId: string) => {
+    if (onDeleteBooking) {
+      onDeleteBooking(bookingId);
     }
+    const updated = bookings.filter((b) => b.id !== bookingId);
+    onUpdateBookings(updated);
+    setSelectedBookingIds((prev) => prev.filter((id) => id !== bookingId));
+    persistToStorage(restaurants, themeConfig, notices, seoConfig, updated);
+    triggerSaveNotification('점심 신청 내역이 안전하게 삭제되었습니다.');
+    setBookingToDelete(null);
+  };
+
+  const confirmBulkDelete = () => {
+    if (selectedBookingIds.length === 0) return;
+    selectedBookingIds.forEach((id) => {
+      if (onDeleteBooking) {
+        onDeleteBooking(id);
+      }
+    });
+    const updated = bookings.filter((b) => !selectedBookingIds.includes(b.id));
+    onUpdateBookings(updated);
+    persistToStorage(restaurants, themeConfig, notices, seoConfig, updated);
+    triggerSaveNotification(`선택한 ${selectedBookingIds.length}개의 신청 내역이 일괄 삭제되었습니다.`);
+    setSelectedBookingIds([]);
+    setIsBulkDeleteModalOpen(false);
+  };
+
+  const toggleSelectAllBookings = () => {
+    if (selectedBookingIds.length === bookings.length) {
+      setSelectedBookingIds([]);
+    } else {
+      setSelectedBookingIds(bookings.map((b) => b.id));
+    }
+  };
+
+  const toggleSelectBooking = (id: string) => {
+    setSelectedBookingIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
   };
 
   // Booking Modal Edit / Create Handlers
@@ -733,11 +767,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     </span>
                   </div>
                   <span className="text-xs text-slate-500">
-                    신청 내역 편집(이름, 인원, 동행자, 식당, 메뉴), 상태 변경 및 삭제
+                    신청 내역 편집(대표자, 인원, 동행자, 식당, 메뉴), 상태 변경 및 개별/일괄 삭제 관리
                   </span>
                 </div>
 
                 <div className="flex items-center space-x-2">
+                  {selectedBookingIds.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setIsBulkDeleteModalOpen(true)}
+                      className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center space-x-1.5 shadow-sm transition-all cursor-pointer animate-fade-in"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>선택한 {selectedBookingIds.length}개 일괄 삭제</span>
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={handleStartCreateBooking}
@@ -753,6 +797,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 <table className="w-full text-left text-xs">
                   <thead className="bg-slate-50 dark:bg-slate-900/40 text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800">
                     <tr>
+                      <th className="p-3.5 w-10 text-center">
+                        <input
+                          type="checkbox"
+                          checked={bookings.length > 0 && selectedBookingIds.length === bookings.length}
+                          onChange={toggleSelectAllBookings}
+                          className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                          title="전체 선택 / 해제"
+                        />
+                      </th>
                       <th className="p-3.5">접수시각</th>
                       <th className="p-3.5">대표자 (실명)</th>
                       <th className="p-3.5">인원 및 동행</th>
@@ -764,81 +817,187 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {bookings.map((b) => (
-                      <tr key={b.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
-                        <td className="p-3.5 font-mono text-slate-500">{b.createdAt}</td>
-                        <td className="p-3.5">
-                          <strong className="font-bold text-slate-900 dark:text-slate-100">
-                            {b.representativeName}
-                          </strong>
-                          <span className="text-[11px] text-slate-400 ml-1">
-                            ({b.rawName})
-                          </span>
-                        </td>
-                        <td className="p-3.5">
-                          <span className="font-bold text-indigo-600 dark:text-indigo-400">{b.headcount}명</span>
-                          {b.companions.length > 0 && (
-                            <p className="text-[11px] text-slate-400 line-clamp-1">
-                              {b.companions.join(', ')}
-                            </p>
-                          )}
-                        </td>
-                        <td className="p-3.5 font-medium">{b.restaurantName}</td>
-                        <td className="p-3.5 max-w-xs">
-                          <p className="line-clamp-1 text-slate-700 dark:text-slate-300">
-                            {b.items.map((i) => `${i.name} ${i.quantity}`).join(', ')}
-                          </p>
-                          {b.memo && (
-                            <p className="text-[11px] text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/40 px-1.5 py-0.5 rounded mt-0.5 truncate" title={b.memo}>
-                              💬 {b.memo}
-                            </p>
-                          )}
-                        </td>
-                        <td className="p-3.5">
-                          <span className="font-bold">{formatKRW(b.totalAmount)}</span>
-                          <span className={`block text-[11px] ${b.difference < 0 ? 'text-rose-600 font-bold' : 'text-emerald-600'}`}>
-                            {b.difference < 0 ? `초과 ${formatKRW(Math.abs(b.difference))}` : '한도 내'}
-                          </span>
-                        </td>
-                        <td className="p-3.5">
-                          <select
-                            value={b.status}
-                            onChange={(e) => handleStatusChange(b.id, e.target.value as Booking['status'])}
-                            className="py-1 px-2 rounded-lg border bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-xs font-semibold"
-                          >
-                            <option value="접수완료">접수완료</option>
-                            <option value="식권수령완료">식권수령완료</option>
-                            <option value="식당이동중">식당이동중</option>
-                            <option value="식사완료">식사완료</option>
-                          </select>
-                        </td>
-                        <td className="p-3.5 text-right">
-                          <div className="flex items-center justify-end space-x-1.5">
-                            <button
-                              type="button"
-                              onClick={() => handleStartEditBooking(b)}
-                              className="px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900 text-indigo-600 dark:text-indigo-300 font-bold transition-colors flex items-center space-x-1 cursor-pointer"
-                              title="신청 정보(대표자, 인원, 동행자, 식당, 메뉴) 편집"
-                            >
-                              <Edit3 className="w-3.5 h-3.5" />
-                              <span>수정</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteBooking(b.id)}
-                              className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950 transition-colors cursor-pointer"
-                              title="신청 삭제"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
+                    {bookings.length === 0 ? (
+                      <tr>
+                        <td colSpan={9} className="p-8 text-center text-slate-400 dark:text-slate-500 text-sm">
+                          현재 등록된 점심 신청 내역이 없습니다.
                         </td>
                       </tr>
-                    ))}
+                    ) : (
+                      bookings.map((b) => (
+                        <tr 
+                          key={b.id} 
+                          className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors ${
+                            selectedBookingIds.includes(b.id) ? 'bg-indigo-50/50 dark:bg-indigo-950/30' : ''
+                          }`}
+                        >
+                          <td className="p-3.5 text-center">
+                            <input
+                              type="checkbox"
+                              checked={selectedBookingIds.includes(b.id)}
+                              onChange={() => toggleSelectBooking(b.id)}
+                              className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                            />
+                          </td>
+                          <td className="p-3.5 font-mono text-slate-500">{b.createdAt}</td>
+                          <td className="p-3.5">
+                            <strong className="font-bold text-slate-900 dark:text-slate-100">
+                              {b.representativeName}
+                            </strong>
+                            <span className="text-[11px] text-slate-400 ml-1">
+                              ({b.rawName})
+                            </span>
+                          </td>
+                          <td className="p-3.5">
+                            <span className="font-bold text-indigo-600 dark:text-indigo-400">{b.headcount}명</span>
+                            {b.companions.length > 0 && (
+                              <p className="text-[11px] text-slate-400 line-clamp-1">
+                                {b.companions.join(', ')}
+                              </p>
+                            )}
+                          </td>
+                          <td className="p-3.5 font-medium">{b.restaurantName}</td>
+                          <td className="p-3.5 max-w-xs">
+                            <p className="line-clamp-1 text-slate-700 dark:text-slate-300">
+                              {b.items.map((i) => `${i.name} ${i.quantity}`).join(', ')}
+                            </p>
+                            {b.memo && (
+                              <p className="text-[11px] text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/40 px-1.5 py-0.5 rounded mt-0.5 truncate" title={b.memo}>
+                                💬 {b.memo}
+                              </p>
+                            )}
+                          </td>
+                          <td className="p-3.5">
+                            <span className="font-bold">{formatKRW(b.totalAmount)}</span>
+                            <span className={`block text-[11px] ${b.difference < 0 ? 'text-rose-600 font-bold' : 'text-emerald-600'}`}>
+                              {b.difference < 0 ? `초과 ${formatKRW(Math.abs(b.difference))}` : '한도 내'}
+                            </span>
+                          </td>
+                          <td className="p-3.5">
+                            <select
+                              value={b.status}
+                              onChange={(e) => handleStatusChange(b.id, e.target.value as Booking['status'])}
+                              className="py-1 px-2 rounded-lg border bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-xs font-semibold cursor-pointer"
+                            >
+                              <option value="접수완료">접수완료</option>
+                              <option value="식권수령완료">식권수령완료</option>
+                              <option value="식당이동중">식당이동중</option>
+                              <option value="식사완료">식사완료</option>
+                            </select>
+                          </td>
+                          <td className="p-3.5 text-right">
+                            <div className="flex items-center justify-end space-x-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleStartEditBooking(b)}
+                                className="px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900 text-indigo-600 dark:text-indigo-300 font-bold transition-colors flex items-center space-x-1 cursor-pointer"
+                                title="신청 정보(대표자, 인원, 동행자, 식당, 메뉴) 편집"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                                <span>수정</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setBookingToDelete(b)}
+                                className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950 transition-colors cursor-pointer"
+                                title="신청 삭제"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
             </div>
+
+            {/* In-app Safe Delete Confirmation Modal (Avoids native iframe alert/confirm issues) */}
+            {bookingToDelete && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
+                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+                  <div className="flex items-center space-x-3 text-rose-600 dark:text-rose-400">
+                    <div className="p-2.5 rounded-xl bg-rose-100 dark:bg-rose-950/60">
+                      <Trash2 className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">신청 내역 삭제</h3>
+                      <p className="text-xs text-slate-500">선택한 조의 점심 신청 내역을 영구 삭제합니다.</p>
+                    </div>
+                  </div>
+                  
+                  <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs space-y-1.5">
+                    <p><strong className="text-slate-700 dark:text-slate-300">대표자:</strong> {bookingToDelete.rawName || bookingToDelete.representativeName} ({bookingToDelete.headcount}명)</p>
+                    <p><strong className="text-slate-700 dark:text-slate-300">식당:</strong> {bookingToDelete.restaurantName}</p>
+                    <p><strong className="text-slate-700 dark:text-slate-300">주문 메뉴:</strong> {bookingToDelete.items.map((i) => `${i.name} ${i.quantity}개`).join(', ')}</p>
+                    <p><strong className="text-slate-700 dark:text-slate-300">총 결제금액:</strong> {formatKRW(bookingToDelete.totalAmount)}</p>
+                  </div>
+
+                  <p className="text-xs text-rose-600 dark:text-rose-400 font-semibold">
+                    ⚠️ 삭제 시 로컬 저장소 및 Firestore 실시간 동기화에서 즉시 제거됩니다.
+                  </p>
+
+                  <div className="flex items-center justify-end space-x-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => setBookingToDelete(null)}
+                      className="px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                    >
+                      취소
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => confirmDeleteBooking(bookingToDelete.id)}
+                      className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md transition-all flex items-center space-x-1 cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>삭제 확인</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* In-app Bulk Delete Modal */}
+            {isBulkDeleteModalOpen && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
+                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+                  <div className="flex items-center space-x-3 text-rose-600 dark:text-rose-400">
+                    <div className="p-2.5 rounded-xl bg-rose-100 dark:bg-rose-950/60">
+                      <Trash2 className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">일괄 삭제 확인</h3>
+                      <p className="text-xs text-slate-500">선택한 {selectedBookingIds.length}개의 신청 내역을 모두 삭제합니다.</p>
+                    </div>
+                  </div>
+                  
+                  <p className="text-xs text-rose-600 dark:text-rose-400 font-semibold">
+                    ⚠️ 선택한 모든 팀의 예약 데이터가 완전히 삭제되며 복구할 수 없습니다. 계속 진행하시겠습니까?
+                  </p>
+
+                  <div className="flex items-center justify-end space-x-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => setIsBulkDeleteModalOpen(false)}
+                      className="px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                    >
+                      취소
+                    </button>
+                    <button
+                      type="button"
+                      onClick={confirmBulkDelete}
+                      className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md transition-all flex items-center space-x-1 cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>{selectedBookingIds.length}개 모두 삭제</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -1849,6 +2008,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           setEditingBooking(null);
         }}
         onSave={handleSaveBookingModal}
+        onDelete={confirmDeleteBooking}
       />
     </div>
   );
