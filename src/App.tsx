@@ -68,7 +68,17 @@ export default function App() {
 
   const [bookings, setBookings] = useState<Booking[]>(() => {
     const saved = localStorage.getItem('app_bookings');
-    return saved ? JSON.parse(saved) : INITIAL_BOOKINGS;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      } catch (e) {
+        console.error('Error parsing stored bookings:', e);
+      }
+    }
+    return INITIAL_BOOKINGS;
   });
 
   const [notices, setNotices] = useState<Notice[]>(() => {
@@ -170,16 +180,73 @@ export default function App() {
 
   // Real-time Firestore synchronization for Bookings and Admin Settings
   useEffect(() => {
-    // 1. Subscribe to Bookings from Firestore
+    // 1. Subscribe to Bookings from Firestore with robust local persistence protection
     const unsubscribeBookings = subscribeBookingsFromFirestore((remoteBookings) => {
       if (remoteBookings && Array.isArray(remoteBookings)) {
         console.log('[Firestore Sync] Received remote bookings:', remoteBookings.length);
-        setBookings(remoteBookings);
-        try {
-          localStorage.setItem('app_bookings', JSON.stringify(remoteBookings));
-        } catch (e) {
-          console.error('Local storage write error:', e);
-        }
+
+        setBookings((currentLocalBookings) => {
+          // Read from localStorage to ensure no locally saved bookings are lost
+          let storedBookings: Booking[] = currentLocalBookings;
+          try {
+            const raw = localStorage.getItem('app_bookings');
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                storedBookings = parsed;
+              }
+            }
+          } catch (e) {
+            console.error('Failed to read app_bookings from localStorage:', e);
+          }
+
+          // Case 1: Remote is empty
+          if (remoteBookings.length === 0) {
+            // NEVER wipe out existing bookings when remote is empty!
+            // Instead, preserve stored bookings and seed them to Firestore.
+            if (storedBookings.length > 0) {
+              storedBookings.forEach((b) => {
+                saveBookingToFirestore(b).catch(() => {});
+              });
+              try {
+                localStorage.setItem('app_bookings', JSON.stringify(storedBookings));
+              } catch (e) {
+                console.error(e);
+              }
+              return storedBookings;
+            }
+            return currentLocalBookings;
+          }
+
+          // Case 2: Remote has bookings -> Merge intelligently with local bookings
+          const bookingMap = new Map<string, Booking>();
+
+          // Remote documents are authoritative for synced bookings
+          remoteBookings.forEach((b) => bookingMap.set(b.id, b));
+
+          // Preserve any local bookings that might not have finished uploading yet
+          storedBookings.forEach((localB) => {
+            if (!bookingMap.has(localB.id)) {
+              bookingMap.set(localB.id, localB);
+              // Backfill to Firestore
+              saveBookingToFirestore(localB).catch(() => {});
+            }
+          });
+
+          const merged = Array.from(bookingMap.values()).sort((a, b) => {
+            const timeA = (a as any).updatedAt || parseInt(a.id.replace(/\D/g, ''), 10) || 0;
+            const timeB = (b as any).updatedAt || parseInt(b.id.replace(/\D/g, ''), 10) || 0;
+            return timeB - timeA;
+          });
+
+          try {
+            localStorage.setItem('app_bookings', JSON.stringify(merged));
+          } catch (e) {
+            console.error('Failed to sync merged bookings to localStorage:', e);
+          }
+
+          return merged;
+        });
       }
     });
 
@@ -302,43 +369,72 @@ export default function App() {
   };
 
   const handleAddBooking = async (newBooking: Booking) => {
-    // 1. Optimistically update local state immediately so user sees it with zero latency
-    setBookings((prev) => [newBooking, ...prev.filter((b) => b.id !== newBooking.id)]);
-    try {
-      localStorage.setItem(
-        'app_bookings',
-        JSON.stringify([newBooking, ...bookings.filter((b) => b.id !== newBooking.id)])
-      );
-    } catch (e) {
-      console.error(e);
-    }
+    const sanitizedBooking: Booking = {
+      ...newBooking,
+      memo: newBooking.memo ? newBooking.memo.trim() : '',
+      companions: newBooking.companions || [],
+      rawCompanions: newBooking.rawCompanions || [],
+    };
+
+    // 1. Immediately update state and save to localStorage synchronously
+    setBookings((prev) => {
+      const updated = [sanitizedBooking, ...prev.filter((b) => b.id !== sanitizedBooking.id)];
+      try {
+        localStorage.setItem('app_bookings', JSON.stringify(updated));
+      } catch (e) {
+        console.error('LocalStorage write error:', e);
+      }
+      return updated;
+    });
 
     // 2. Persist to Firestore so all students and admin browsers receive it in real-time
     try {
-      await saveBookingToFirestore(newBooking);
-      console.log('Successfully saved booking to Firestore:', newBooking.id);
+      await saveBookingToFirestore(sanitizedBooking);
     } catch (err) {
-      console.error('Failed to sync booking to Firestore:', err);
+      console.warn('Failed to sync booking to Firestore, but preserved in localStorage:', err);
     }
   };
 
   const handleUpdateBooking = async (updatedBooking: Booking) => {
-    setBookings((prev) => prev.map((b) => (b.id === updatedBooking.id ? updatedBooking : b)));
+    const sanitized: Booking = {
+      ...updatedBooking,
+      memo: updatedBooking.memo ? updatedBooking.memo.trim() : '',
+      companions: updatedBooking.companions || [],
+      rawCompanions: updatedBooking.rawCompanions || [],
+    };
+
+    setBookings((prev) => {
+      const updated = prev.map((b) => (b.id === sanitized.id ? sanitized : b));
+      try {
+        localStorage.setItem('app_bookings', JSON.stringify(updated));
+      } catch (e) {
+        console.error('LocalStorage update error:', e);
+      }
+      return updated;
+    });
+
     try {
-      await updateBookingInFirestore(updatedBooking);
-      console.log('Successfully updated booking in Firestore:', updatedBooking.id);
+      await updateBookingInFirestore(sanitized);
     } catch (err) {
-      console.error('Failed to update booking in Firestore:', err);
+      console.warn('Failed to update booking in Firestore, but preserved in localStorage:', err);
     }
   };
 
   const handleDeleteBooking = async (bookingId: string) => {
-    setBookings((prev) => prev.filter((b) => b.id !== bookingId));
+    setBookings((prev) => {
+      const updated = prev.filter((b) => b.id !== bookingId);
+      try {
+        localStorage.setItem('app_bookings', JSON.stringify(updated));
+      } catch (e) {
+        console.error('LocalStorage delete error:', e);
+      }
+      return updated;
+    });
+
     try {
       await deleteBookingFromFirestore(bookingId);
-      console.log('Successfully deleted booking from Firestore:', bookingId);
     } catch (err) {
-      console.error('Failed to delete booking from Firestore:', err);
+      console.warn('Failed to delete booking from Firestore, but updated in localStorage:', err);
     }
   };
 

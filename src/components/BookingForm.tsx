@@ -165,7 +165,7 @@ export const BookingForm: React.FC<BookingFormProps> = ({
       headcount,
       companions: maskedCompanions,
       rawCompanions: validRawCompanions,
-      memo: memo.trim() || undefined,
+      memo: memo.trim() ? memo.trim() : '',
       restaurantId: activeRestaurant.id,
       restaurantName: activeRestaurant.name,
       items,
