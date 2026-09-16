@@ -24,12 +24,17 @@ import {
 } from 'lucide-react';
 import { Restaurant, MenuItem, Booking, Notice, ThemeConfig, SeoConfig } from '../types';
 import { formatKRW, generateRestaurantReservationText, copyToClipboard } from '../utils';
+import { EditBookingModal } from './EditBookingModal';
+import { saveAdminSettingsToFirestore } from '../firebase';
 
 interface AdminPanelProps {
   restaurants: Restaurant[];
   onUpdateRestaurants: (updated: Restaurant[]) => void;
   bookings: Booking[];
   onUpdateBookings: (updated: Booking[]) => void;
+  onUpdateBooking?: (updated: Booking) => void;
+  onDeleteBooking?: (id: string) => void;
+  onAddBooking?: (newBooking: Booking) => void;
   notices: Notice[];
   onUpdateNotices: (updated: Notice[]) => void;
   themeConfig: ThemeConfig;
@@ -46,6 +51,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   onUpdateRestaurants,
   bookings,
   onUpdateBookings,
+  onUpdateBooking,
+  onDeleteBooking,
+  onAddBooking,
   notices,
   onUpdateNotices,
   themeConfig,
@@ -58,6 +66,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'summary' | 'restaurants' | 'notices' | 'design' | 'seo'>('summary');
   const [copiedSuccess, setCopiedSuccess] = useState<string | null>(null);
+
+  // Booking Edit Modal State
+  const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
+  const [isEditBookingModalOpen, setIsEditBookingModalOpen] = useState<boolean>(false);
 
   // Save Toast Feedback
   const [saveToast, setSaveToast] = useState<{
@@ -86,6 +98,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       localStorage.setItem('app_notices', JSON.stringify(updatedNotices));
       localStorage.setItem('app_seo_config', JSON.stringify(updatedSeo));
       localStorage.setItem('app_bookings', JSON.stringify(updatedBookings));
+
+      // Asynchronously broadcast to Firestore so all clients get the latest settings
+      saveAdminSettingsToFirestore({
+        restaurants: updatedRestaurants,
+        themeConfig: updatedTheme,
+        notices: updatedNotices,
+        seoConfig: updatedSeo,
+      }).catch((e) => console.warn('Firestore settings broadcast warning:', e));
     } catch (err) {
       console.error('Failed to write to localStorage:', err);
     }
@@ -186,6 +206,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   // Booking Status Change
   const handleStatusChange = (bookingId: string, newStatus: Booking['status']) => {
+    const target = bookings.find((b) => b.id === bookingId);
+    if (target && onUpdateBooking) {
+      onUpdateBooking({ ...target, status: newStatus });
+    }
     const updated = bookings.map((b) => (b.id === bookingId ? { ...b, status: newStatus } : b));
     onUpdateBookings(updated);
     persistToStorage(restaurants, themeConfig, notices, seoConfig, updated);
@@ -193,11 +217,60 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   const handleDeleteBooking = (bookingId: string) => {
     if (confirm('정말로 이 점심 신청 내역을 삭제하시겠습니까?')) {
+      if (onDeleteBooking) {
+        onDeleteBooking(bookingId);
+      }
       const updated = bookings.filter((b) => b.id !== bookingId);
       onUpdateBookings(updated);
       persistToStorage(restaurants, themeConfig, notices, seoConfig, updated);
       triggerSaveNotification('점심 신청 내역이 삭제 및 저장되었습니다.');
     }
+  };
+
+  // Booking Modal Edit / Create Handlers
+  const handleStartEditBooking = (booking: Booking) => {
+    setEditingBooking(booking);
+    setIsEditBookingModalOpen(true);
+  };
+
+  const handleStartCreateBooking = () => {
+    const newB: Booking = {
+      id: 'book-' + Date.now(),
+      representativeName: '',
+      rawName: '',
+      headcount: 4,
+      companions: ['', '', ''],
+      restaurantId: restaurants[0]?.id || '',
+      restaurantName: restaurants[0]?.name || '',
+      items: [],
+      totalAmount: 0,
+      totalBudget: 4 * (themeConfig.budgetPerPerson || 10000),
+      difference: 4 * (themeConfig.budgetPerPerson || 10000),
+      agreedToPolicy: true,
+      createdAt: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
+      status: '접수완료',
+    };
+    setEditingBooking(newB);
+    setIsEditBookingModalOpen(true);
+  };
+
+  const handleSaveBookingModal = (updatedBooking: Booking) => {
+    const exists = bookings.some((b) => b.id === updatedBooking.id);
+    let newBookings: Booking[];
+    if (exists) {
+      newBookings = bookings.map((b) => (b.id === updatedBooking.id ? updatedBooking : b));
+      if (onUpdateBooking) {
+        onUpdateBooking(updatedBooking);
+      }
+    } else {
+      newBookings = [updatedBooking, ...bookings];
+      if (onAddBooking) {
+        onAddBooking(updatedBooking);
+      }
+    }
+    onUpdateBookings(newBookings);
+    persistToStorage(restaurants, themeConfig, notices, seoConfig, newBookings);
+    triggerSaveNotification(`[${updatedBooking.rawName || '신규'} 조] 예약 정보가 실시간 반영되었습니다.`);
   };
 
   // Notice Add / Edit
@@ -646,13 +719,32 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
             {/* Detailed Bookings Table */}
             <div className="rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-              <div className="px-5 py-3.5 bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-                <span className="font-bold text-sm text-slate-800 dark:text-slate-200">
-                  신청 조 목록 ({bookings.length}팀)
-                </span>
-                <span className="text-xs text-slate-500">
-                  상태 변경 및 예약 취소/삭제 관리
-                </span>
+              <div className="px-5 py-3.5 bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2.5">
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <span className="font-bold text-sm text-slate-800 dark:text-slate-200">
+                      신청 조 목록 ({bookings.length}팀)
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
+                      <span>실시간 동기화 (Firebase)</span>
+                    </span>
+                  </div>
+                  <span className="text-xs text-slate-500">
+                    신청 내역 편집(이름, 인원, 동행자, 식당, 메뉴), 상태 변경 및 삭제
+                  </span>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={handleStartCreateBooking}
+                    className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center space-x-1.5 shadow-sm transition-all cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>신규 조 수동 등록</span>
+                  </button>
+                </div>
               </div>
 
               <div className="overflow-x-auto">
@@ -714,13 +806,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           </select>
                         </td>
                         <td className="p-3.5 text-right">
-                          <button
-                            onClick={() => handleDeleteBooking(b.id)}
-                            className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950 transition-colors"
-                            title="삭제"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          <div className="flex items-center justify-end space-x-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleStartEditBooking(b)}
+                              className="px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900 text-indigo-600 dark:text-indigo-300 font-bold transition-colors flex items-center space-x-1 cursor-pointer"
+                              title="신청 정보(대표자, 인원, 동행자, 식당, 메뉴) 편집"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                              <span>수정</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteBooking(b.id)}
+                              className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950 transition-colors cursor-pointer"
+                              title="신청 삭제"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -1727,6 +1831,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           </div>
         )}
       </div>
+      {/* Booking Edit Modal */}
+      <EditBookingModal
+        booking={editingBooking}
+        restaurants={restaurants}
+        themeConfig={themeConfig}
+        isOpen={isEditBookingModalOpen}
+        onClose={() => {
+          setIsEditBookingModalOpen(false);
+          setEditingBooking(null);
+        }}
+        onSave={handleSaveBookingModal}
+      />
     </div>
   );
 };

@@ -12,6 +12,14 @@ import {
   DEFAULT_SEO_CONFIG 
 } from './mockData';
 import { Restaurant, Booking, Notice, ThemeConfig, SeoConfig } from './types';
+import { 
+  saveBookingToFirestore, 
+  updateBookingInFirestore, 
+  deleteBookingFromFirestore, 
+  subscribeBookingsFromFirestore, 
+  saveAdminSettingsToFirestore, 
+  subscribeAdminSettingsFromFirestore 
+} from './firebase';
 import { Navbar } from './components/Navbar';
 import { NoticeBanner } from './components/NoticeBanner';
 import { AcademyHero } from './components/AcademyHero';
@@ -151,6 +159,65 @@ export default function App() {
     localStorage.setItem('app_seo_config', JSON.stringify(seoConfig));
   }, [seoConfig]);
 
+  // Real-time Firestore synchronization for Bookings and Admin Settings
+  useEffect(() => {
+    // 1. Subscribe to Bookings from Firestore
+    const unsubscribeBookings = subscribeBookingsFromFirestore((remoteBookings) => {
+      if (remoteBookings && Array.isArray(remoteBookings)) {
+        console.log('[Firestore Sync] Received remote bookings:', remoteBookings.length);
+        setBookings(remoteBookings);
+        try {
+          localStorage.setItem('app_bookings', JSON.stringify(remoteBookings));
+        } catch (e) {
+          console.error('Local storage write error:', e);
+        }
+      }
+    });
+
+    // 2. Subscribe to Admin Settings from Firestore (restaurants, notices, theme, seo)
+    const unsubscribeSettings = subscribeAdminSettingsFromFirestore((remoteSettings) => {
+      if (remoteSettings) {
+        if (Array.isArray(remoteSettings.restaurants) && remoteSettings.restaurants.length > 0) {
+          setRestaurants(remoteSettings.restaurants);
+          try {
+            localStorage.setItem('app_restaurants', JSON.stringify(remoteSettings.restaurants));
+          } catch (e) {
+            console.error(e);
+          }
+        }
+        if (Array.isArray(remoteSettings.notices) && remoteSettings.notices.length > 0) {
+          setNotices(remoteSettings.notices);
+          try {
+            localStorage.setItem('app_notices', JSON.stringify(remoteSettings.notices));
+          } catch (e) {
+            console.error(e);
+          }
+        }
+        if (remoteSettings.themeConfig) {
+          setThemeConfig((prev) => ({ ...prev, ...remoteSettings.themeConfig }));
+          try {
+            localStorage.setItem('app_theme_config', JSON.stringify(remoteSettings.themeConfig));
+          } catch (e) {
+            console.error(e);
+          }
+        }
+        if (remoteSettings.seoConfig) {
+          setSeoConfig((prev) => ({ ...prev, ...remoteSettings.seoConfig }));
+          try {
+            localStorage.setItem('app_seo_config', JSON.stringify(remoteSettings.seoConfig));
+          } catch (e) {
+            console.error(e);
+          }
+        }
+      }
+    });
+
+    return () => {
+      unsubscribeBookings();
+      unsubscribeSettings();
+    };
+  }, []);
+
   // Apply Theme CSS variables and dark mode to document
   useEffect(() => {
     const root = document.documentElement;
@@ -202,16 +269,70 @@ export default function App() {
     setThemeConfig(DEFAULT_THEME_CONFIG);
   };
 
-  const handleAddBooking = (newBooking: Booking) => {
-    setBookings((prev) => [newBooking, ...prev]);
+  const handleAddBooking = async (newBooking: Booking) => {
+    // 1. Optimistically update local state immediately so user sees it with zero latency
+    setBookings((prev) => [newBooking, ...prev.filter((b) => b.id !== newBooking.id)]);
+    try {
+      localStorage.setItem(
+        'app_bookings',
+        JSON.stringify([newBooking, ...bookings.filter((b) => b.id !== newBooking.id)])
+      );
+    } catch (e) {
+      console.error(e);
+    }
+
+    // 2. Persist to Firestore so all students and admin browsers receive it in real-time
+    try {
+      await saveBookingToFirestore(newBooking);
+      console.log('Successfully saved booking to Firestore:', newBooking.id);
+    } catch (err) {
+      console.error('Failed to sync booking to Firestore:', err);
+    }
   };
 
-  const handleSaveAllAdminData = () => {
-    localStorage.setItem('app_restaurants', JSON.stringify(restaurants));
-    localStorage.setItem('app_theme_config', JSON.stringify(themeConfig));
-    localStorage.setItem('app_notices', JSON.stringify(notices));
-    localStorage.setItem('app_seo_config', JSON.stringify(seoConfig));
-    localStorage.setItem('app_bookings', JSON.stringify(bookings));
+  const handleUpdateBooking = async (updatedBooking: Booking) => {
+    setBookings((prev) => prev.map((b) => (b.id === updatedBooking.id ? updatedBooking : b)));
+    try {
+      await updateBookingInFirestore(updatedBooking);
+      console.log('Successfully updated booking in Firestore:', updatedBooking.id);
+    } catch (err) {
+      console.error('Failed to update booking in Firestore:', err);
+    }
+  };
+
+  const handleDeleteBooking = async (bookingId: string) => {
+    setBookings((prev) => prev.filter((b) => b.id !== bookingId));
+    try {
+      await deleteBookingFromFirestore(bookingId);
+      console.log('Successfully deleted booking from Firestore:', bookingId);
+    } catch (err) {
+      console.error('Failed to delete booking from Firestore:', err);
+    }
+  };
+
+  const handleSaveAllAdminData = async () => {
+    try {
+      localStorage.setItem('app_restaurants', JSON.stringify(restaurants));
+      localStorage.setItem('app_theme_config', JSON.stringify(themeConfig));
+      localStorage.setItem('app_notices', JSON.stringify(notices));
+      localStorage.setItem('app_seo_config', JSON.stringify(seoConfig));
+      localStorage.setItem('app_bookings', JSON.stringify(bookings));
+    } catch (e) {
+      console.error(e);
+    }
+
+    // Sync admin configurations to Firestore
+    try {
+      await saveAdminSettingsToFirestore({
+        restaurants,
+        themeConfig,
+        notices,
+        seoConfig,
+      });
+      console.log('Admin settings saved to Firestore');
+    } catch (err) {
+      console.error('Failed to sync admin settings to Firestore:', err);
+    }
   };
 
   const totalHeadcount = bookings.reduce((sum, b) => sum + b.headcount, 0);
@@ -316,6 +437,9 @@ export default function App() {
               onUpdateRestaurants={setRestaurants}
               bookings={bookings}
               onUpdateBookings={setBookings}
+              onUpdateBooking={handleUpdateBooking}
+              onDeleteBooking={handleDeleteBooking}
+              onAddBooking={handleAddBooking}
               notices={notices}
               onUpdateNotices={setNotices}
               themeConfig={themeConfig}
