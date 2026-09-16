@@ -228,6 +228,12 @@ export const LiveSummaryWidget: React.FC<LiveSummaryWidgetProps> = ({
                     동행: {booking.companions.join(', ')}
                   </p>
                 )}
+
+                {booking.memo && (
+                  <p className="text-[11px] text-indigo-700 dark:text-indigo-300 bg-indigo-50/70 dark:bg-indigo-950/40 px-2 py-1 rounded-md mt-1 inline-block">
+                    💬 {booking.memo}
+                  </p>
+                )}
               </div>
 
               <div className="flex flex-col items-end space-y-1.5 shrink-0">

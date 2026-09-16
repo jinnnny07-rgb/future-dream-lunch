@@ -91,6 +91,16 @@ export const ShareModal: React.FC<ShareModalProps> = ({
             <div className="text-slate-500 dark:text-slate-400 truncate">
               {booking.items.map((i) => `${i.name} × ${i.quantity}`).join(', ')}
             </div>
+            {booking.companions.length > 0 && (
+              <div className="text-slate-400 text-[11px] mt-0.5 truncate">
+                동행자: {booking.companions.join(', ')}
+              </div>
+            )}
+            {booking.memo && (
+              <div className="text-indigo-600 dark:text-indigo-400 text-[11px] mt-1 bg-indigo-50 dark:bg-indigo-950/40 px-2 py-0.5 rounded-md inline-block">
+                💬 {booking.memo}
+              </div>
+            )}
             <div className="mt-2 pt-2 border-t border-slate-200 dark:border-slate-800 flex justify-between font-semibold">
               <span>총 주문액: {formatKRW(booking.totalAmount)}</span>
               <span className={booking.difference < 0 ? 'text-rose-600' : 'text-emerald-600'}>

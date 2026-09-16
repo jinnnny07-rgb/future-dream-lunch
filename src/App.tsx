@@ -30,9 +30,18 @@ import { ShareModal } from './components/ShareModal';
 import { AdminAuthModal } from './components/AdminAuthModal';
 import { ShieldCheck, User, Sparkles, Lock } from 'lucide-react';
 
+const MENU_DATA_VERSION = 'v3_20260916_clean_menu_and_memo';
+
 export default function App() {
   // Persistent State (localStorage with initial fallbacks)
   const [restaurants, setRestaurants] = useState<Restaurant[]>(() => {
+    const version = localStorage.getItem('app_menu_version');
+    if (version !== MENU_DATA_VERSION) {
+      localStorage.setItem('app_restaurants', JSON.stringify(INITIAL_RESTAURANTS));
+      localStorage.setItem('app_menu_version', MENU_DATA_VERSION);
+      return INITIAL_RESTAURANTS;
+    }
+
     const saved = localStorage.getItem('app_restaurants');
     if (saved) {
       try {
@@ -44,7 +53,7 @@ export default function App() {
             category: r.category || '일반음식점',
             description: r.description || '',
             voucherOnly: false,
-            voucherNotice: '',
+            voucherNotice: r.voucherNotice || '',
             iconName: r.iconName || 'Store',
             tel: r.tel || '',
             menus: Array.isArray(r.menus) ? r.menus : [],
@@ -178,12 +187,35 @@ export default function App() {
     const unsubscribeSettings = subscribeAdminSettingsFromFirestore((remoteSettings) => {
       if (remoteSettings) {
         if (Array.isArray(remoteSettings.restaurants) && remoteSettings.restaurants.length > 0) {
-          setRestaurants(remoteSettings.restaurants);
-          try {
-            localStorage.setItem('app_restaurants', JSON.stringify(remoteSettings.restaurants));
-          } catch (e) {
-            console.error(e);
+          // Check if remote data has legacy menu IDs
+          const hasLegacy = remoteSettings.restaurants.some((r) =>
+            r.menus?.some((m) => m.id.startsWith('m-10') || m.id.startsWith('m-20') || m.id.startsWith('m-30'))
+          );
+          if (hasLegacy) {
+            // Upgrade remote settings to the new menus with 10k prices
+            setRestaurants(INITIAL_RESTAURANTS);
+            saveAdminSettingsToFirestore({
+              restaurants: INITIAL_RESTAURANTS,
+              themeConfig,
+              notices,
+              seoConfig,
+            }).catch(console.warn);
+          } else {
+            setRestaurants(remoteSettings.restaurants);
+            try {
+              localStorage.setItem('app_restaurants', JSON.stringify(remoteSettings.restaurants));
+            } catch (e) {
+              console.error(e);
+            }
           }
+        } else {
+          // If no remote restaurants, initialize with INITIAL_RESTAURANTS
+          saveAdminSettingsToFirestore({
+            restaurants: INITIAL_RESTAURANTS,
+            themeConfig,
+            notices,
+            seoConfig,
+          }).catch(console.warn);
         }
         if (Array.isArray(remoteSettings.notices) && remoteSettings.notices.length > 0) {
           setNotices(remoteSettings.notices);

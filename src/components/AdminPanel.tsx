@@ -239,7 +239,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       representativeName: '',
       rawName: '',
       headcount: 4,
-      companions: ['', '', ''],
+      companions: [],
+      rawCompanions: [],
+      memo: '',
       restaurantId: restaurants[0]?.id || '',
       restaurantName: restaurants[0]?.name || '',
       items: [],
@@ -786,6 +788,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           <p className="line-clamp-1 text-slate-700 dark:text-slate-300">
                             {b.items.map((i) => `${i.name} ${i.quantity}`).join(', ')}
                           </p>
+                          {b.memo && (
+                            <p className="text-[11px] text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/40 px-1.5 py-0.5 rounded mt-0.5 truncate" title={b.memo}>
+                              💬 {b.memo}
+                            </p>
+                          )}
                         </td>
                         <td className="p-3.5">
                           <span className="font-bold">{formatKRW(b.totalAmount)}</span>

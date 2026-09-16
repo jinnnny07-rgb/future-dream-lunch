@@ -40,7 +40,7 @@ export function generateRestaurantReservationText(
   const menuLines = Object.entries(menuSummaryMap).map(([name, qty]) => `  - ${name}: ${qty}개`);
 
   const groupsSummary = bookingsForRestaurant
-    .map((b) => `  • ${b.representativeName} 팀 (${b.headcount}명)`)
+    .map((b) => `  • ${b.representativeName} 팀 (${b.headcount}명)${b.memo ? ` [메모: ${b.memo}]` : ''}`)
     .join('\n');
 
   return `[점심 단체 사전 예약 요청 - ${restaurant.name}]
@@ -69,7 +69,7 @@ export function generateSlackShareText(booking: Booking): string {
 • *선택 식당:* ${booking.restaurantName}
 • *주문 메뉴:* ${itemsText}
 • *총 주문액:* ${formatKRW(booking.totalAmount)} (지원 한도 ${formatKRW(booking.totalBudget)})
-${booking.difference < 0 ? `⚠️ 초과액 ${formatKRW(Math.abs(booking.difference))} (개인부담)` : '✅ 한도 내 지원 충족'}
+${booking.difference < 0 ? `⚠️ 초과액 ${formatKRW(Math.abs(booking.difference))} (개인부담)` : '✅ 한도 내 지원 충족'}${booking.memo ? `\n• *전달 메모:* "${booking.memo}"` : ''}
 함께 즐거운 점심 시간 되세요! ✨`;
 }
 
@@ -84,7 +84,7 @@ export function generateKakaoShareText(booking: Booking): string {
 동행: ${booking.companions.length > 0 ? booking.companions.join(', ') : '단독'}
 메뉴: ${itemsText}
 합계: ${formatKRW(booking.totalAmount)} / 지원한도: ${formatKRW(booking.totalBudget)}
-${booking.difference < 0 ? `(초과금액: ${formatKRW(Math.abs(booking.difference))})` : '(지원 충족)'}
+${booking.difference < 0 ? `(초과금액: ${formatKRW(Math.abs(booking.difference))})` : '(지원 충족)'}${booking.memo ? `\n메모: ${booking.memo}` : ''}
 오늘 점심 맛있게 드세요!`;
 }
 

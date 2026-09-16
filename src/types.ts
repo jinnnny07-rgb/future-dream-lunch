@@ -30,7 +30,9 @@ export interface Booking {
   representativeName: string; // masked for public display (e.g. 홍*동)
   rawName: string; // real name
   headcount: number;
-  companions: string[];
+  companions: string[]; // masked for public display (e.g. ['이*영', '박*수'])
+  rawCompanions?: string[]; // real names for admin view
+  memo?: string; // special request or note from students (e.g. "오이 빼주세요", "11:50 도착 예정")
   restaurantId: string;
   restaurantName: string;
   items: OrderItem[];

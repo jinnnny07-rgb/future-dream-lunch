@@ -13,7 +13,8 @@ import {
   Share2, 
   Flame, 
   ShieldCheck,
-  RotateCcw
+  RotateCcw,
+  MessageSquare
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Restaurant, MenuItem, Booking, ThemeConfig, OrderItem } from '../types';
@@ -37,6 +38,7 @@ export const BookingForm: React.FC<BookingFormProps> = ({
   const [rawName, setRawName] = useState<string>('');
   const [headcount, setHeadcount] = useState<number>(4);
   const [companions, setCompanions] = useState<string[]>(['김철수', '이영희', '박민수']);
+  const [memo, setMemo] = useState<string>('');
   const [selectedRestaurantId, setSelectedRestaurantId] = useState<string>(
     restaurants[0]?.id || ''
   );
@@ -152,12 +154,18 @@ export const BookingForm: React.FC<BookingFormProps> = ({
     const now = new Date();
     const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
+    // Filter valid companion names and mask them
+    const validRawCompanions = companions.map((c) => c.trim()).filter((c) => c.length > 0);
+    const maskedCompanions = validRawCompanions.map((name) => maskKoreanName(name));
+
     const newBooking: Booking = {
       id: 'book-' + Date.now(),
       representativeName: masked,
       rawName: rawName.trim(),
       headcount,
-      companions: companions.filter((c) => c.trim().length > 0),
+      companions: maskedCompanions,
+      rawCompanions: validRawCompanions,
+      memo: memo.trim() || undefined,
       restaurantId: activeRestaurant.id,
       restaurantName: activeRestaurant.name,
       items,
@@ -192,6 +200,7 @@ export const BookingForm: React.FC<BookingFormProps> = ({
     setRawName('');
     setCart({});
     handleHeadcountChange(4);
+    setMemo('');
     setLastSubmittedBooking(null);
     setFormError(null);
   };
@@ -361,12 +370,17 @@ export const BookingForm: React.FC<BookingFormProps> = ({
                       value={comp}
                       onChange={(e) => handleCompanionChange(idx, e.target.value)}
                       placeholder="이름 입력"
-                      className="w-full pl-14 pr-8 py-2 rounded-xl border bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-indigo-500"
+                      className="w-full pl-14 pr-16 py-2 rounded-xl border bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-indigo-500"
                     />
+                    {comp.trim() && (
+                      <span className="absolute right-7 text-[10px] font-mono font-bold text-indigo-600 dark:text-indigo-400 pointer-events-none">
+                        {maskKoreanName(comp.trim())}
+                      </span>
+                    )}
                     <button
                       type="button"
                       onClick={() => handleRemoveCompanion(idx)}
-                      className="absolute right-2 text-slate-400 hover:text-rose-500 p-1"
+                      className="absolute right-1 text-slate-400 hover:text-rose-500 p-1 cursor-pointer"
                       title="동행자 삭제"
                     >
                       <X className="w-3.5 h-3.5" />
@@ -381,7 +395,7 @@ export const BookingForm: React.FC<BookingFormProps> = ({
             )}
 
             <div className="flex items-center justify-between pt-1 border-t border-slate-200/60 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400">
-              <span>💡 동행자 이름을 추가하거나 삭제하면 총 인원수와 식대 지원 한도가 실시간으로 자동 연동됩니다.</span>
+              <span>💡 동행자 이름도 대표자와 동일하게 대시보드와 공유 메시지에 <strong>'홍*동' 형식으로 자동 마스킹</strong>되어 표시됩니다.</span>
             </div>
           </div>
         </div>
@@ -459,6 +473,13 @@ export const BookingForm: React.FC<BookingFormProps> = ({
             </span>
           </div>
 
+          {activeRestaurant.voucherNotice && (
+            <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 flex items-start space-x-2 text-xs text-amber-800 dark:text-amber-200">
+              <span className="font-bold shrink-0">📌 식권 안내:</span>
+              <span>{activeRestaurant.voucherNotice}</span>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {activeRestaurant.menus.map((item) => {
               const qty = cart[item.id] || 0;
@@ -471,23 +492,10 @@ export const BookingForm: React.FC<BookingFormProps> = ({
                       : 'bg-white dark:bg-slate-800/80 border-slate-200 dark:border-slate-700'
                   }`}
                 >
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-bold text-sm text-slate-800 dark:text-slate-100">
-                        {item.name}
-                      </span>
-                      {item.isPopular && (
-                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-100 dark:bg-rose-950 text-rose-600 dark:text-rose-400 flex items-center">
-                          <Flame className="w-2.5 h-2.5 mr-0.5" />
-                          인기
-                        </span>
-                      )}
-                    </div>
-                    {item.description && (
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
-                        {item.description}
-                      </p>
-                    )}
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-bold text-sm text-slate-800 dark:text-slate-100">
+                      {item.name}
+                    </span>
                   </div>
 
                   <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-700/60">
@@ -501,7 +509,7 @@ export const BookingForm: React.FC<BookingFormProps> = ({
                         type="button"
                         onClick={() => handleQuantityChange(item.id, -1)}
                         disabled={qty === 0}
-                        className="w-6 h-6 rounded flex items-center justify-center bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 disabled:opacity-30 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+                        className="w-6 h-6 rounded flex items-center justify-center bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 disabled:opacity-30 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors cursor-pointer"
                       >
                         <Minus className="w-3 h-3" />
                       </button>
@@ -511,7 +519,7 @@ export const BookingForm: React.FC<BookingFormProps> = ({
                       <button
                         type="button"
                         onClick={() => handleQuantityChange(item.id, 1)}
-                        className="w-6 h-6 rounded flex items-center justify-center bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+                        className="w-6 h-6 rounded flex items-center justify-center bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors cursor-pointer"
                       >
                         <Plus className="w-3 h-3" />
                       </button>
@@ -523,7 +531,28 @@ export const BookingForm: React.FC<BookingFormProps> = ({
           </div>
         </div>
 
-        {/* SECTION 5: Embedded Real-time Budget Calculator */}
+        {/* SECTION 5: Memo & Special Requests Area */}
+        <div className="space-y-2">
+          <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 flex items-center space-x-1.5">
+            <MessageSquare className="w-3.5 h-3.5 text-indigo-500" />
+            <span>5. 교육생 요청사항 및 전달 메모 (선택)</span>
+          </label>
+          <div className="relative">
+            <textarea
+              id="input-booking-memo"
+              rows={2}
+              value={memo}
+              onChange={(e) => setMemo(e.target.value)}
+              maxLength={200}
+              className="w-full p-3 rounded-2xl border bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-xs sm:text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 focus:outline-hidden transition-all resize-none"
+            />
+            <span className="absolute bottom-2.5 right-3 text-[10px] text-slate-400">
+              {memo.length}/200자
+            </span>
+          </div>
+        </div>
+
+        {/* SECTION 6: Embedded Real-time Budget Calculator */}
         <BudgetCalculator
           headcount={headcount}
           totalOrderAmount={totalOrderAmount}
@@ -593,6 +622,12 @@ export const BookingForm: React.FC<BookingFormProps> = ({
             <p className="text-xs text-emerald-800 dark:text-emerald-300">
               선택 식당: <strong>{lastSubmittedBooking.restaurantName}</strong> ({lastSubmittedBooking.headcount}명) | 
               총 결제액: <strong>{formatKRW(lastSubmittedBooking.totalAmount)}</strong>
+              {lastSubmittedBooking.companions.length > 0 && (
+                <span> | 동행자: {lastSubmittedBooking.companions.join(', ')}</span>
+              )}
+              {lastSubmittedBooking.memo && (
+                <span className="block mt-1">📝 메모: "{lastSubmittedBooking.memo}"</span>
+              )}
             </p>
 
             {/* Social Share Buttons */}

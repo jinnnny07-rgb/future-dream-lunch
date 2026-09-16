@@ -10,7 +10,8 @@ import {
   Clock, 
   CheckCircle2, 
   Utensils,
-  UserCheck
+  UserCheck,
+  MessageSquare
 } from 'lucide-react';
 import { Booking, Restaurant, OrderItem, ThemeConfig } from '../types';
 import { formatKRW, maskKoreanName } from '../utils';
@@ -37,7 +38,10 @@ export const EditBookingModal: React.FC<EditBookingModalProps> = ({
   // Local editable state
   const [rawName, setRawName] = useState<string>(booking.rawName || '');
   const [headcount, setHeadcount] = useState<number>(booking.headcount || 1);
-  const [companions, setCompanions] = useState<string[]>(booking.companions || []);
+  const [companions, setCompanions] = useState<string[]>(
+    booking.rawCompanions || booking.companions || []
+  );
+  const [memo, setMemo] = useState<string>(booking.memo || '');
   const [selectedRestaurantId, setSelectedRestaurantId] = useState<string>(
     booking.restaurantId || restaurants[0]?.id || ''
   );
@@ -155,12 +159,17 @@ export const EditBookingModal: React.FC<EditBookingModalProps> = ({
         };
       });
 
+    const validRawCompanions = companions.map((c) => c.trim()).filter((c) => c.length > 0);
+    const maskedCompanions = validRawCompanions.map((name) => maskKoreanName(name));
+
     const updatedBooking: Booking = {
       ...booking,
       rawName: rawName.trim(),
       representativeName: maskKoreanName(rawName.trim()),
       headcount,
-      companions: companions.filter((c) => c.trim().length > 0),
+      companions: maskedCompanions,
+      rawCompanions: validRawCompanions,
+      memo: memo.trim() || undefined,
       restaurantId: activeRestaurant.id,
       restaurantName: activeRestaurant.name,
       items,
@@ -292,20 +301,26 @@ export const EditBookingModal: React.FC<EditBookingModalProps> = ({
                 <span>팀원 추가</span>
               </button>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               {companions.map((comp, idx) => (
-                <div key={idx} className="flex items-center space-x-1">
+                <div key={idx} className="relative flex items-center">
                   <input
                     type="text"
                     value={comp}
                     onChange={(e) => handleCompanionChange(idx, e.target.value)}
                     placeholder={`동행자 ${idx + 1}`}
-                    className="w-full p-2 rounded-lg border bg-slate-50 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-xs font-medium"
+                    className="w-full pl-2.5 pr-16 py-2 rounded-lg border bg-slate-50 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-xs font-medium"
                   />
+                  {comp.trim() && (
+                    <span className="absolute right-7 text-[10px] font-mono font-bold text-indigo-600 dark:text-indigo-400 pointer-events-none">
+                      {maskKoreanName(comp.trim())}
+                    </span>
+                  )}
                   <button
                     type="button"
                     onClick={() => handleRemoveCompanion(idx)}
-                    className="p-1.5 text-slate-400 hover:text-rose-500 rounded cursor-pointer"
+                    className="absolute right-1 p-1 text-slate-400 hover:text-rose-500 rounded cursor-pointer"
+                    title="삭제"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -347,7 +362,7 @@ export const EditBookingModal: React.FC<EditBookingModalProps> = ({
                 <span>[{activeRestaurant.name}] 주문 메뉴 및 수량 수정</span>
               </label>
 
-              <div className="max-h-48 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800 bg-slate-50/50 dark:bg-slate-800/40 p-1">
+              <div className="max-h-60 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800 bg-slate-50/50 dark:bg-slate-800/40 p-1">
                 {activeRestaurant.menus.map((menu) => {
                   const qty = itemQuantities[menu.id] || 0;
                   return (
@@ -387,6 +402,21 @@ export const EditBookingModal: React.FC<EditBookingModalProps> = ({
               </div>
             </div>
           )}
+
+          {/* 5. Memo Input */}
+          <div>
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center space-x-1">
+              <MessageSquare className="w-3.5 h-3.5 text-indigo-500" />
+              <span>요청사항 및 전달 메모</span>
+            </label>
+            <textarea
+              rows={2}
+              value={memo}
+              onChange={(e) => setMemo(e.target.value)}
+              maxLength={200}
+              className="w-full p-2.5 rounded-xl border bg-slate-50 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500 resize-none"
+            />
+          </div>
 
           {/* 5. Budget Summary Box */}
           <div className="p-4 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-between gap-3 text-xs">
