@@ -8,7 +8,7 @@ import {
   Clock
 } from 'lucide-react';
 import { Booking, Restaurant, ThemeConfig } from '../types';
-import { formatKRW } from '../utils';
+import { formatKRW, formatDisplayCreatedAt } from '../utils';
 
 interface LiveSummaryWidgetProps {
   bookings: Booking[];
@@ -214,8 +214,8 @@ export const LiveSummaryWidget: React.FC<LiveSummaryWidgetProps> = ({
                   <span className="px-2 py-0.5 rounded-md font-bold text-[11px] bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400">
                     {booking.restaurantName} ({booking.headcount}명)
                   </span>
-                  <span className="text-[10px] text-slate-400">
-                    {booking.createdAt}
+                  <span className="text-[10px] text-slate-400 font-mono">
+                    {formatDisplayCreatedAt(booking.createdAt)}
                   </span>
                 </div>
 

@@ -20,6 +20,39 @@ export function formatKRW(amount: number): string {
 }
 
 /**
+ * Formats current date and time into 'YYYY.MM.DD HH:mm'
+ */
+export function getCurrentDateTimeString(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const hours = String(now.getHours()).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  return `${year}.${month}.${day} ${hours}:${minutes}`;
+}
+
+/**
+ * Formats existing createdAt string for display.
+ * If it's already full datetime (e.g. '2026.09.17 12:30'), keeps it.
+ * If it's only time (e.g. '10:42'), prepends today's date for display consistency.
+ */
+export function formatDisplayCreatedAt(createdAt: string): string {
+  if (!createdAt) return '';
+  const trimmed = createdAt.trim();
+  // Already contains date (contains dot or dash or slash)
+  if (trimmed.includes('.') || trimmed.includes('-') || trimmed.includes('/')) {
+    return trimmed;
+  }
+  // Otherwise it's likely just time e.g. "10:42" -> prefix today's date
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}.${month}.${day} ${trimmed}`;
+}
+
+/**
  * Builds polite restaurant phone call / SMS reservation text
  */
 export function generateRestaurantReservationText(
@@ -40,7 +73,7 @@ export function generateRestaurantReservationText(
   const menuLines = Object.entries(menuSummaryMap).map(([name, qty]) => `  - ${name}: ${qty}개`);
 
   const groupsSummary = bookingsForRestaurant
-    .map((b) => `  • ${b.representativeName} 팀 (${b.headcount}명)${b.memo ? ` [메모: ${b.memo}]` : ''}`)
+    .map((b) => `  • ${b.rawName || b.representativeName} 팀 (${b.headcount}명)${b.memo ? ` [메모: ${b.memo}]` : ''}`)
     .join('\n');
 
   return `[점심 단체 사전 예약 요청 - ${restaurant.name}]

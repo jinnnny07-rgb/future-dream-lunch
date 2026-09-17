@@ -27,9 +27,8 @@ export const INITIAL_RESTAURANTS: Restaurant[] = [
     id: 'rest-2',
     name: '칭마레이',
     category: '중식',
-    description: '정통 중화요리 전문점 (위 3개 메뉴 식권 식사 가능)',
+    description: '정통 중화요리 전문점',
     voucherOnly: false,
-    voucherNotice: '위 세 메뉴만 식권으로 식사 가능하며, 이외 메뉴는 추가금액 발생합니다.',
     tel: '02-555-8930',
     iconName: 'Soup',
     menus: [
@@ -129,7 +128,7 @@ export const INITIAL_BOOKINGS: Booking[] = [
     totalBudget: 40000,
     difference: 0, // exactly on budget
     agreedToPolicy: true,
-    createdAt: '10:42',
+    createdAt: '2026.09.17 10:42',
     status: '접수완료',
   },
   {
@@ -151,7 +150,7 @@ export const INITIAL_BOOKINGS: Booking[] = [
     totalBudget: 30000,
     difference: 0,
     agreedToPolicy: true,
-    createdAt: '10:55',
+    createdAt: '2026.09.17 10:55',
     status: '접수완료',
   },
   {
@@ -172,7 +171,7 @@ export const INITIAL_BOOKINGS: Booking[] = [
     totalBudget: 20000,
     difference: 0,
     agreedToPolicy: true,
-    createdAt: '11:05',
+    createdAt: '2026.09.17 11:05',
     status: '식당이동중',
   },
 ];

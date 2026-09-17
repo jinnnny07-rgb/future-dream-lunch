@@ -23,7 +23,7 @@ import {
   CheckCircle
 } from 'lucide-react';
 import { Restaurant, MenuItem, Booking, Notice, ThemeConfig, SeoConfig } from '../types';
-import { formatKRW, generateRestaurantReservationText, copyToClipboard } from '../utils';
+import { formatKRW, generateRestaurantReservationText, copyToClipboard, getCurrentDateTimeString, formatDisplayCreatedAt } from '../utils';
 import { EditBookingModal } from './EditBookingModal';
 import { saveAdminSettingsToFirestore } from '../firebase';
 
@@ -283,7 +283,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       totalBudget: 4 * (themeConfig.budgetPerPerson || 10000),
       difference: 4 * (themeConfig.budgetPerPerson || 10000),
       agreedToPolicy: true,
-      createdAt: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
+      createdAt: getCurrentDateTimeString(),
       status: '접수완료',
     };
     setEditingBooking(newB);
@@ -806,9 +806,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           title="전체 선택 / 해제"
                         />
                       </th>
-                      <th className="p-3.5">접수시각</th>
-                      <th className="p-3.5">대표자 (실명)</th>
-                      <th className="p-3.5">인원 및 동행</th>
+                      <th className="p-3.5">접수 일시</th>
+                      <th className="p-3.5">대표자</th>
+                      <th className="p-3.5">인원 및 동행자</th>
                       <th className="p-3.5">식당</th>
                       <th className="p-3.5">주문 메뉴</th>
                       <th className="p-3.5">금액 / 한도</th>
@@ -839,20 +839,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                               className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
                             />
                           </td>
-                          <td className="p-3.5 font-mono text-slate-500">{b.createdAt}</td>
+                          <td className="p-3.5 font-mono text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                            {formatDisplayCreatedAt(b.createdAt)}
+                          </td>
                           <td className="p-3.5">
-                            <strong className="font-bold text-slate-900 dark:text-slate-100">
-                              {b.representativeName}
+                            <strong className="font-bold text-slate-900 dark:text-slate-100 text-sm">
+                              {b.rawName || b.representativeName}
                             </strong>
-                            <span className="text-[11px] text-slate-400 ml-1">
-                              ({b.rawName})
-                            </span>
                           </td>
                           <td className="p-3.5">
                             <span className="font-bold text-indigo-600 dark:text-indigo-400">{b.headcount}명</span>
-                            {b.companions.length > 0 && (
-                              <p className="text-[11px] text-slate-400 line-clamp-1">
-                                {b.companions.join(', ')}
+                            {((b.rawCompanions && b.rawCompanions.length > 0) || b.companions.length > 0) && (
+                              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                {(b.rawCompanions && b.rawCompanions.length > 0
+                                  ? b.rawCompanions
+                                  : b.companions
+                                ).join(', ')}
                               </p>
                             )}
                           </td>

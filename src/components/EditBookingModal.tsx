@@ -14,7 +14,7 @@ import {
   MessageSquare
 } from 'lucide-react';
 import { Booking, Restaurant, OrderItem, ThemeConfig } from '../types';
-import { formatKRW, maskKoreanName } from '../utils';
+import { formatKRW, maskKoreanName, formatDisplayCreatedAt } from '../utils';
 
 interface EditBookingModalProps {
   booking: Booking | null;
@@ -202,7 +202,7 @@ export const EditBookingModal: React.FC<EditBookingModalProps> = ({
             <div>
               <h3 className="text-base font-bold">점심 신청 내역 편집</h3>
               <p className="text-xs text-slate-300">
-                신청 조 ID: <span className="font-mono text-indigo-300">{booking.id}</span> (접수 {booking.createdAt})
+                신청 조 ID: <span className="font-mono text-indigo-300">{booking.id}</span> (접수 {formatDisplayCreatedAt(booking.createdAt)})
               </p>
             </div>
           </div>

@@ -30,7 +30,7 @@ import { ShareModal } from './components/ShareModal';
 import { AdminAuthModal } from './components/AdminAuthModal';
 import { ShieldCheck, User, Sparkles, Lock } from 'lucide-react';
 
-const MENU_DATA_VERSION = 'v3_20260916_clean_menu_and_memo';
+const MENU_DATA_VERSION = 'v4_20260917_remove_chingmarei_voucher_notice';
 
 const getDeletedBookingIds = (): Set<string> => {
   try {
@@ -301,9 +301,31 @@ export default function App() {
               seoConfig,
             }).catch(console.warn);
           } else {
-            setRestaurants(remoteSettings.restaurants);
+            // Check if remote data has the obsolete voucherNotice for chingmarei
+            const cleanedRestaurants = remoteSettings.restaurants.map((r) => {
+              if (r.name === '칭마레이' || r.id === 'rest-2') {
+                return {
+                  ...r,
+                  description: r.description ? r.description.replace(/\s*\(위 3개 메뉴 식권 식사 가능\)/g, '') : '정통 중화요리 전문점',
+                  voucherNotice: '',
+                };
+              }
+              return r;
+            });
+
+            const hadNotice = remoteSettings.restaurants.some(
+              (r) => (r.name === '칭마레이' || r.id === 'rest-2') && r.voucherNotice
+            );
+
+            if (hadNotice) {
+              saveAdminSettingsToFirestore({
+                restaurants: cleanedRestaurants,
+              }).catch(console.warn);
+            }
+
+            setRestaurants(cleanedRestaurants);
             try {
-              localStorage.setItem('app_restaurants', JSON.stringify(remoteSettings.restaurants));
+              localStorage.setItem('app_restaurants', JSON.stringify(cleanedRestaurants));
             } catch (e) {
               console.error(e);
             }
