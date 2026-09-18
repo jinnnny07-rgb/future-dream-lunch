@@ -6,7 +6,9 @@ import {
   deleteDoc, 
   collection, 
   onSnapshot,
-  query
+  query,
+  getDocs,
+  writeBatch
 } from "firebase/firestore";
 import { Booking, Restaurant, Notice, ThemeConfig, SeoConfig } from "./types";
 
@@ -93,6 +95,30 @@ export const deleteBookingFromFirestore = async (bookingId: string): Promise<voi
 };
 
 /**
+ * 모든 점심 신청 내역 일괄 삭제 (즉시 전체 삭제 및 매일 자정 자동 초기화용)
+ */
+export const clearAllBookingsFromFirestore = async (): Promise<number> => {
+  try {
+    const q = query(collection(db, "bookings"));
+    const snapshot = await getDocs(q);
+    if (snapshot.empty) {
+      console.log("Firestore: No bookings to clear.");
+      return 0;
+    }
+    const batch = writeBatch(db);
+    snapshot.forEach((docSnap) => {
+      batch.delete(docSnap.ref);
+    });
+    await batch.commit();
+    console.log(`Firestore: Successfully cleared ${snapshot.size} bookings.`);
+    return snapshot.size;
+  } catch (error) {
+    console.error("Firestore clearAllBookingsFromFirestore error:", error);
+    throw error;
+  }
+};
+
+/**
  * 실시간 전체 점심 예약 구독 (학생/관리자 모든 기기 실시간 동기화)
  */
 export const subscribeBookingsFromFirestore = (
@@ -155,9 +181,12 @@ export const saveAdminSettingsToFirestore = async (data: {
   notices?: Notice[];
   themeConfig?: ThemeConfig;
   seoConfig?: SeoConfig;
+  lastResetDateKST?: string;
+  [key: string]: any;
 }): Promise<void> => {
   try {
     await setDoc(doc(db, "lunchData", "settings"), data, { merge: true });
+    console.log("Firestore: Admin settings successfully synchronized.");
   } catch (error) {
     console.error("Firestore saveAdminSettingsToFirestore error:", error);
     throw error;

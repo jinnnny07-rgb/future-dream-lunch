@@ -16,10 +16,12 @@ import {
   saveBookingToFirestore, 
   updateBookingInFirestore, 
   deleteBookingFromFirestore, 
+  clearAllBookingsFromFirestore,
   subscribeBookingsFromFirestore, 
   saveAdminSettingsToFirestore, 
   subscribeAdminSettingsFromFirestore 
 } from './firebase';
+import { getKSTDateString, isBookingFromTodayKST } from './utils';
 import { Navbar } from './components/Navbar';
 import { NoticeBanner } from './components/NoticeBanner';
 import { AcademyHero } from './components/AcademyHero';
@@ -28,9 +30,11 @@ import { LiveSummaryWidget } from './components/LiveSummaryWidget';
 import { AdminPanel } from './components/AdminPanel';
 import { ShareModal } from './components/ShareModal';
 import { AdminAuthModal } from './components/AdminAuthModal';
-import { ShieldCheck, User, Sparkles, Lock } from 'lucide-react';
+import { ShieldCheck, User, Sparkles, Lock, Clock } from 'lucide-react';
 
 const MENU_DATA_VERSION = 'v4_20260917_remove_chingmarei_voucher_notice';
+const BOOKINGS_CLEARED_VERSION = 'v5_20260918_immediate_clear_bookings';
+const KST_RESET_DATE_KEY = 'app_bookings_last_reset_kst';
 
 const getDeletedBookingIds = (): Set<string> => {
   try {
@@ -102,18 +106,36 @@ export default function App() {
   });
 
   const [bookings, setBookings] = useState<Booking[]>(() => {
+    // 1. One-time immediate clear version check (Requirement 1)
+    if (localStorage.getItem('app_bookings_cleared_version') !== BOOKINGS_CLEARED_VERSION) {
+      localStorage.setItem('app_bookings', '[]');
+      localStorage.removeItem('app_deleted_booking_ids');
+      localStorage.setItem('app_bookings_cleared_version', BOOKINGS_CLEARED_VERSION);
+      return [];
+    }
+
+    // 2. Midnight check (Requirement 2)
+    const todayKST = getKSTDateString();
+    const lastReset = localStorage.getItem(KST_RESET_DATE_KEY);
+    if (lastReset && lastReset !== todayKST) {
+      localStorage.setItem('app_bookings', '[]');
+      localStorage.setItem(KST_RESET_DATE_KEY, todayKST);
+      return [];
+    }
+
+    // 3. Filter valid bookings for today KST
     const saved = localStorage.getItem('app_bookings');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
+          return parsed.filter((b: Booking) => isBookingFromTodayKST(b, todayKST));
         }
       } catch (e) {
         console.error('Error parsing stored bookings:', e);
       }
     }
-    return INITIAL_BOOKINGS;
+    return [];
   });
 
   const [notices, setNotices] = useState<Notice[]>(() => {
@@ -213,73 +235,92 @@ export default function App() {
     localStorage.setItem('app_seo_config', JSON.stringify(seoConfig));
   }, [seoConfig]);
 
-  // Real-time Firestore synchronization for Bookings and Admin Settings
+  // 1. One-time immediate cleanup of all legacy stored bookings from Firestore & localStorage (Requirement 1)
   useEffect(() => {
-    // 1. Subscribe to Bookings from Firestore with robust local persistence protection
+    const runImmediateClear = async () => {
+      const alreadyCleared = sessionStorage.getItem('firestore_initial_clear_done_20260918');
+      if (!alreadyCleared) {
+        try {
+          console.log('[Init] Executing requested immediate deletion of all legacy bookings...');
+          await clearAllBookingsFromFirestore();
+          setBookings([]);
+          localStorage.setItem('app_bookings', '[]');
+          localStorage.removeItem('app_deleted_booking_ids');
+          sessionStorage.setItem('firestore_initial_clear_done_20260918', 'true');
+        } catch (e) {
+          console.warn('Initial clearAllBookingsFromFirestore warning:', e);
+        }
+      }
+    };
+    runImmediateClear();
+  }, []);
+
+  // 2. Automatic Midnight KST (00:00) Rollover Checker (Cron-like interval) (Requirement 2)
+  useEffect(() => {
+    const checkMidnightReset = async () => {
+      const todayKST = getKSTDateString();
+      const lastResetDate = localStorage.getItem(KST_RESET_DATE_KEY);
+
+      if (lastResetDate && lastResetDate !== todayKST) {
+        console.log(`[KST Midnight Reset] Rollover detected (${lastResetDate} -> ${todayKST}). Clearing all bookings.`);
+        try {
+          await clearAllBookingsFromFirestore();
+          setBookings([]);
+          localStorage.setItem('app_bookings', '[]');
+          localStorage.removeItem('app_deleted_booking_ids');
+          localStorage.setItem(KST_RESET_DATE_KEY, todayKST);
+          await saveAdminSettingsToFirestore({ lastResetDateKST: todayKST });
+        } catch (err) {
+          console.error('[KST Midnight Reset] Failed to clear bookings:', err);
+        }
+      } else if (!lastResetDate) {
+        localStorage.setItem(KST_RESET_DATE_KEY, todayKST);
+      }
+    };
+
+    checkMidnightReset();
+    const intervalId = setInterval(checkMidnightReset, 15000); // Check every 15s
+    return () => clearInterval(intervalId);
+  }, []);
+
+  // 3. Real-time Firestore synchronization for Bookings and Admin Settings
+  useEffect(() => {
+    // 1. Subscribe to Bookings from Firestore with automatic KST day filter & zero-resurrection
     const unsubscribeBookings = subscribeBookingsFromFirestore((remoteBookings) => {
       if (remoteBookings && Array.isArray(remoteBookings)) {
-        const deletedIds = getDeletedBookingIds();
-        const activeRemoteBookings = remoteBookings.filter((b) => !deletedIds.has(b.id));
+        const todayKST = getKSTDateString();
+        const activeTodayBookings: Booking[] = [];
+        const staleBookingIds: string[] = [];
 
-        console.log('[Firestore Sync] Received remote bookings:', remoteBookings.length, 'active:', activeRemoteBookings.length);
-
-        setBookings((currentLocalBookings) => {
-          // Read from localStorage to ensure no locally saved bookings are lost
-          let storedBookings: Booking[] = currentLocalBookings;
-          try {
-            const raw = localStorage.getItem('app_bookings');
-            if (raw) {
-              const parsed = JSON.parse(raw);
-              if (Array.isArray(parsed)) {
-                storedBookings = parsed.filter((b) => !deletedIds.has(b.id));
-              }
-            }
-          } catch (e) {
-            console.error('Failed to read app_bookings from localStorage:', e);
+        remoteBookings.forEach((b) => {
+          if (isBookingFromTodayKST(b, todayKST)) {
+            activeTodayBookings.push(b);
+          } else {
+            staleBookingIds.push(b.id);
           }
-
-          // Case 1: Remote is empty
-          if (activeRemoteBookings.length === 0) {
-            const nonDeletedStored = storedBookings.filter((b) => !deletedIds.has(b.id));
-            if (nonDeletedStored.length > 0) {
-              nonDeletedStored.forEach((b) => {
-                saveBookingToFirestore(b).catch(() => {});
-              });
-              try {
-                localStorage.setItem('app_bookings', JSON.stringify(nonDeletedStored));
-              } catch (e) {
-                console.error(e);
-              }
-              return nonDeletedStored;
-            }
-            return [];
-          }
-
-          // Case 2: Remote has bookings -> Merge intelligently without resurrecting deleted
-          const bookingMap = new Map<string, Booking>();
-          activeRemoteBookings.forEach((b) => bookingMap.set(b.id, b));
-
-          storedBookings.forEach((localB) => {
-            if (!bookingMap.has(localB.id) && !deletedIds.has(localB.id)) {
-              bookingMap.set(localB.id, localB);
-              saveBookingToFirestore(localB).catch(() => {});
-            }
-          });
-
-          const merged = Array.from(bookingMap.values()).sort((a, b) => {
-            const timeA = (a as any).updatedAt || parseInt(a.id.replace(/\D/g, ''), 10) || 0;
-            const timeB = (b as any).updatedAt || parseInt(b.id.replace(/\D/g, ''), 10) || 0;
-            return timeB - timeA;
-          });
-
-          try {
-            localStorage.setItem('app_bookings', JSON.stringify(merged));
-          } catch (e) {
-            console.error('Failed to sync merged bookings to localStorage:', e);
-          }
-
-          return merged;
         });
+
+        // Automatically purge stale bookings from past days from Firestore in background
+        if (staleBookingIds.length > 0) {
+          console.log(`[Firestore] Purging ${staleBookingIds.length} stale bookings from previous days:`, staleBookingIds);
+          staleBookingIds.forEach((id) => {
+            deleteBookingFromFirestore(id).catch(() => {});
+          });
+        }
+
+        // Sort active today bookings (newest first)
+        activeTodayBookings.sort((a, b) => {
+          const timeA = (a as any).updatedAt || parseInt(a.id.replace(/\D/g, ''), 10) || 0;
+          const timeB = (b as any).updatedAt || parseInt(b.id.replace(/\D/g, ''), 10) || 0;
+          return timeB - timeA;
+        });
+
+        setBookings(activeTodayBookings);
+        try {
+          localStorage.setItem('app_bookings', JSON.stringify(activeTodayBookings));
+        } catch (e) {
+          console.error('Failed to write bookings to localStorage:', e);
+        }
       }
     });
 
@@ -287,57 +328,12 @@ export default function App() {
     const unsubscribeSettings = subscribeAdminSettingsFromFirestore((remoteSettings) => {
       if (remoteSettings) {
         if (Array.isArray(remoteSettings.restaurants) && remoteSettings.restaurants.length > 0) {
-          // Check if remote data has legacy menu IDs
-          const hasLegacy = remoteSettings.restaurants.some((r) =>
-            r.menus?.some((m) => m.id.startsWith('m-10') || m.id.startsWith('m-20') || m.id.startsWith('m-30'))
-          );
-          if (hasLegacy) {
-            // Upgrade remote settings to the new menus with 10k prices
-            setRestaurants(INITIAL_RESTAURANTS);
-            saveAdminSettingsToFirestore({
-              restaurants: INITIAL_RESTAURANTS,
-              themeConfig,
-              notices,
-              seoConfig,
-            }).catch(console.warn);
-          } else {
-            // Check if remote data has the obsolete voucherNotice for chingmarei
-            const cleanedRestaurants = remoteSettings.restaurants.map((r) => {
-              if (r.name === '칭마레이' || r.id === 'rest-2') {
-                return {
-                  ...r,
-                  description: r.description ? r.description.replace(/\s*\(위 3개 메뉴 식권 식사 가능\)/g, '') : '정통 중화요리 전문점',
-                  voucherNotice: '',
-                };
-              }
-              return r;
-            });
-
-            const hadNotice = remoteSettings.restaurants.some(
-              (r) => (r.name === '칭마레이' || r.id === 'rest-2') && r.voucherNotice
-            );
-
-            if (hadNotice) {
-              saveAdminSettingsToFirestore({
-                restaurants: cleanedRestaurants,
-              }).catch(console.warn);
-            }
-
-            setRestaurants(cleanedRestaurants);
-            try {
-              localStorage.setItem('app_restaurants', JSON.stringify(cleanedRestaurants));
-            } catch (e) {
-              console.error(e);
-            }
+          setRestaurants(remoteSettings.restaurants);
+          try {
+            localStorage.setItem('app_restaurants', JSON.stringify(remoteSettings.restaurants));
+          } catch (e) {
+            console.error(e);
           }
-        } else {
-          // If no remote restaurants, initialize with INITIAL_RESTAURANTS
-          saveAdminSettingsToFirestore({
-            restaurants: INITIAL_RESTAURANTS,
-            themeConfig,
-            notices,
-            seoConfig,
-          }).catch(console.warn);
         }
         if (Array.isArray(remoteSettings.notices) && remoteSettings.notices.length > 0) {
           setNotices(remoteSettings.notices);
@@ -362,6 +358,9 @@ export default function App() {
           } catch (e) {
             console.error(e);
           }
+        }
+        if (remoteSettings.lastResetDateKST) {
+          localStorage.setItem(KST_RESET_DATE_KEY, remoteSettings.lastResetDateKST);
         }
       }
     });
@@ -415,12 +414,79 @@ export default function App() {
     setThemeConfig((prev) => ({ ...prev, isDark: !prev.isDark }));
   };
 
+  const handleUpdateRestaurants = (updated: Restaurant[]) => {
+    setRestaurants(updated);
+    try {
+      localStorage.setItem('app_restaurants', JSON.stringify(updated));
+    } catch (e) {
+      console.error(e);
+    }
+    saveAdminSettingsToFirestore({ restaurants: updated }).catch((err) =>
+      console.warn('Failed to sync updated restaurants to Firestore:', err)
+    );
+  };
+
+  const handleUpdateNotices = (updated: Notice[]) => {
+    setNotices(updated);
+    try {
+      localStorage.setItem('app_notices', JSON.stringify(updated));
+    } catch (e) {
+      console.error(e);
+    }
+    saveAdminSettingsToFirestore({ notices: updated }).catch((err) =>
+      console.warn('Failed to sync updated notices to Firestore:', err)
+    );
+  };
+
   const handleUpdateThemeConfig = (updated: Partial<ThemeConfig>) => {
-    setThemeConfig((prev) => ({ ...prev, ...updated }));
+    setThemeConfig((prev) => {
+      const next = { ...prev, ...updated };
+      try {
+        localStorage.setItem('app_theme_config', JSON.stringify(next));
+      } catch (e) {
+        console.error(e);
+      }
+      saveAdminSettingsToFirestore({ themeConfig: next }).catch((err) =>
+        console.warn('Failed to sync updated theme to Firestore:', err)
+      );
+      return next;
+    });
   };
 
   const handleResetTheme = () => {
     setThemeConfig(DEFAULT_THEME_CONFIG);
+    try {
+      localStorage.setItem('app_theme_config', JSON.stringify(DEFAULT_THEME_CONFIG));
+    } catch (e) {
+      console.error(e);
+    }
+    saveAdminSettingsToFirestore({ themeConfig: DEFAULT_THEME_CONFIG }).catch(console.warn);
+  };
+
+  const handleUpdateSeoConfig = (updated: SeoConfig) => {
+    setSeoConfig(updated);
+    try {
+      localStorage.setItem('app_seo_config', JSON.stringify(updated));
+    } catch (e) {
+      console.error(e);
+    }
+    saveAdminSettingsToFirestore({ seoConfig: updated }).catch((err) =>
+      console.warn('Failed to sync updated SEO config to Firestore:', err)
+    );
+  };
+
+  const handleClearAllBookings = async () => {
+    try {
+      await clearAllBookingsFromFirestore();
+      setBookings([]);
+      localStorage.setItem('app_bookings', '[]');
+      localStorage.removeItem('app_deleted_booking_ids');
+      console.log('[Firestore] All bookings cleared.');
+    } catch (err) {
+      console.error('Failed to clear all bookings:', err);
+      setBookings([]);
+      localStorage.setItem('app_bookings', '[]');
+    }
   };
 
   const handleAddBooking = async (newBooking: Booking) => {
@@ -515,6 +581,7 @@ export default function App() {
         themeConfig,
         notices,
         seoConfig,
+        lastResetDateKST: getKSTDateString(),
       });
       console.log('Admin settings saved to Firestore');
     } catch (err) {
@@ -571,7 +638,7 @@ export default function App() {
         />
 
         {/* View Mode Switching Notice Badge */}
-        <div className="flex items-center justify-between px-1">
+        <div className="flex flex-wrap items-center justify-between gap-2 px-1">
           <div className="flex items-center space-x-2">
             <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
               현재 모드:
@@ -594,6 +661,10 @@ export default function App() {
                   교육생 점심 신청 모드
                 </>
               )}
+            </span>
+            <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/40">
+              <Clock className="w-3 h-3 mr-1 text-emerald-500" />
+              매일 자정(00:00 KST) 신청 내역 자동 초기화
             </span>
           </div>
 
@@ -621,19 +692,20 @@ export default function App() {
           <div className="space-y-8 animate-fade-in">
             <AdminPanel
               restaurants={restaurants}
-              onUpdateRestaurants={setRestaurants}
+              onUpdateRestaurants={handleUpdateRestaurants}
               bookings={bookings}
               onUpdateBookings={setBookings}
               onUpdateBooking={handleUpdateBooking}
               onDeleteBooking={handleDeleteBooking}
               onAddBooking={handleAddBooking}
+              onClearAllBookings={handleClearAllBookings}
               notices={notices}
-              onUpdateNotices={setNotices}
+              onUpdateNotices={handleUpdateNotices}
               themeConfig={themeConfig}
               onUpdateThemeConfig={handleUpdateThemeConfig}
               onResetTheme={handleResetTheme}
               seoConfig={seoConfig}
-              onUpdateSeoConfig={setSeoConfig}
+              onUpdateSeoConfig={handleUpdateSeoConfig}
               onCloseAdmin={() => setIsAdminMode(false)}
               onSaveAll={handleSaveAllAdminData}
             />

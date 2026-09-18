@@ -20,6 +20,62 @@ export function formatKRW(amount: number): string {
 }
 
 /**
+ * 한국 표준시(KST, UTC+9) 기준 날짜 문자열 ('YYYY-MM-DD') 반환
+ */
+export function getKSTDateString(date: Date = new Date()): string {
+  try {
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    return formatter.format(date); // Format: YYYY-MM-DD
+  } catch (e) {
+    const utc = date.getTime() + date.getTimezoneOffset() * 60000;
+    const kstDate = new Date(utc + 9 * 60 * 60 * 1000);
+    const yyyy = kstDate.getFullYear();
+    const mm = String(kstDate.getMonth() + 1).padStart(2, '0');
+    const dd = String(kstDate.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+}
+
+/**
+ * 특정 신청 내역이 오늘(KST 기준) 생성된 유효한 신청인지 판별
+ */
+export function isBookingFromTodayKST(booking: Booking, todayKST = getKSTDateString()): boolean {
+  if (!booking) return false;
+
+  // 1. createdAt 형식 확인: e.g. "2026.09.18 10:42" or "2026-09-18 10:42"
+  const rawDate = booking.createdAt || '';
+  const normalized = rawDate.replace(/\./g, '-').trim();
+  if (normalized.startsWith(todayKST)) {
+    return true;
+  }
+
+  // 2. ID에 타임스탬프가 포함된 경우: e.g. "book-1726651234567"
+  const match = booking.id.match(/\d{12,}/);
+  if (match) {
+    const ts = parseInt(match[0], 10);
+    if (!isNaN(ts) && ts > 0) {
+      const bookingDateKST = getKSTDateString(new Date(ts));
+      return bookingDateKST === todayKST;
+    }
+  }
+
+  // 3. updatedAt 필드가 숫자로 있는 경우
+  const updatedAt = (booking as any).updatedAt;
+  if (typeof updatedAt === 'number' && updatedAt > 0) {
+    const bookingDateKST = getKSTDateString(new Date(updatedAt));
+    return bookingDateKST === todayKST;
+  }
+
+  // 4. 날짜 없이 시간만 있고(e.g. "10:42"), createdAt에 연도 정보가 없는 옛 레거시 데이터는 오늘이 아님
+  return false;
+}
+
+/**
  * Formats current date and time into 'YYYY.MM.DD HH:mm'
  */
 export function getCurrentDateTimeString(): string {

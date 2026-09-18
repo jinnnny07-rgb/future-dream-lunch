@@ -109,72 +109,7 @@ export const INITIAL_NOTICES: Notice[] = [
   },
 ];
 
-export const INITIAL_BOOKINGS: Booking[] = [
-  {
-    id: 'book-1',
-    representativeName: '홍*동',
-    rawName: '홍길동',
-    headcount: 4,
-    companions: ['김*수', '이*희', '박*민'],
-    rawCompanions: ['김철수', '이영희', '박지민'],
-    memo: '김치찌개 덜 맵게 부탁드립니다!',
-    restaurantId: 'rest-1',
-    restaurantName: '임방식당',
-    items: [
-      { menuItemId: 'ib-1', name: '묵은지 김치찌개(2인이상)', price: 10000, quantity: 2 },
-      { menuItemId: 'ib-9', name: '제육볶음', price: 10000, quantity: 2 },
-    ],
-    totalAmount: 40000,
-    totalBudget: 40000,
-    difference: 0, // exactly on budget
-    agreedToPolicy: true,
-    createdAt: '2026.09.17 10:42',
-    status: '접수완료',
-  },
-  {
-    id: 'book-2',
-    representativeName: '이*수',
-    rawName: '이진수',
-    headcount: 3,
-    companions: ['최*아', '강*우'],
-    rawCompanions: ['최수아', '강현우'],
-    memo: '11시 55분경 도착 예정입니다.',
-    restaurantId: 'rest-2',
-    restaurantName: '칭마레이',
-    items: [
-      { menuItemId: 'cm-1', name: '짜장면', price: 10000, quantity: 1 },
-      { menuItemId: 'cm-2', name: '짬뽕', price: 10000, quantity: 1 },
-      { menuItemId: 'cm-3', name: '새우볶음밥', price: 10000, quantity: 1 },
-    ],
-    totalAmount: 30000,
-    totalBudget: 30000,
-    difference: 0,
-    agreedToPolicy: true,
-    createdAt: '2026.09.17 10:55',
-    status: '접수완료',
-  },
-  {
-    id: 'book-3',
-    representativeName: '박*민',
-    rawName: '박상민',
-    headcount: 2,
-    companions: ['정*은'],
-    rawCompanions: ['정다은'],
-    memo: '돈까스 소스 따로 부탁드려요.',
-    restaurantId: 'rest-3',
-    restaurantName: '고릴라쿡',
-    items: [
-      { menuItemId: 'gc-29', name: '왕돈까스', price: 10000, quantity: 1 },
-      { menuItemId: 'gc-1', name: '제육덮밥', price: 10000, quantity: 1 },
-    ],
-    totalAmount: 20000,
-    totalBudget: 20000,
-    difference: 0,
-    agreedToPolicy: true,
-    createdAt: '2026.09.17 11:05',
-    status: '식당이동중',
-  },
-];
+export const INITIAL_BOOKINGS: Booking[] = [];
 
 export const DEFAULT_THEME_CONFIG: ThemeConfig = {
   primaryColor: '#2C2B70',

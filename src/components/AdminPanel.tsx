@@ -35,6 +35,7 @@ interface AdminPanelProps {
   onUpdateBooking?: (updated: Booking) => void;
   onDeleteBooking?: (id: string) => void;
   onAddBooking?: (newBooking: Booking) => void;
+  onClearAllBookings?: () => Promise<void> | void;
   notices: Notice[];
   onUpdateNotices: (updated: Notice[]) => void;
   themeConfig: ThemeConfig;
@@ -54,6 +55,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   onUpdateBooking,
   onDeleteBooking,
   onAddBooking,
+  onClearAllBookings,
   notices,
   onUpdateNotices,
   themeConfig,
@@ -364,6 +366,30 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     triggerSaveNotification('공지사항이 삭제 및 저장되었습니다.');
   };
 
+  const handleClearAllBookingsClick = async () => {
+    const ok = window.confirm(
+      '⚠️ [전체 신청 내역 초기화]\n\n' +
+      '현재 등록된 모든 점심 신청 내역을 데이터베이스(Firestore) 및 브라우저에서 완전히 삭제하시겠습니까?\n\n' +
+      '• 기존의 모든 접수 내역이 즉시 0건으로 비워집니다.\n' +
+      '• 새로고침 및 다른 기기에서도 다시 나타나지 않습니다.\n' +
+      '• 이 작업은 되돌릴 수 없습니다.'
+    );
+    if (!ok) return;
+
+    try {
+      if (onClearAllBookings) {
+        await onClearAllBookings();
+      }
+      onUpdateBookings([]);
+      setSelectedBookingIds([]);
+      persistToStorage(restaurants, themeConfig, notices, seoConfig, []);
+      triggerSaveNotification('모든 점심 신청 내역이 데이터베이스(Firestore) 및 로컬에서 성공적으로 초기화(삭제)되었습니다.');
+    } catch (e) {
+      console.error('Failed to clear all bookings:', e);
+      alert('신청 내역 초기화 중 오류가 발생했습니다.');
+    }
+  };
+
   // Restaurant Basic Info Field Update
   const handleUpdateRestaurantField = (
     restId: string,
@@ -374,6 +400,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       r.id === restId ? { ...r, [field]: value } : r
     );
     onUpdateRestaurants(updated);
+    persistToStorage(updated);
   };
 
   // Save Restaurant & Menus explicitly
@@ -772,6 +799,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </div>
 
                 <div className="flex items-center space-x-2">
+                  {bookings.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleClearAllBookingsClick}
+                      className="px-3 py-1.5 rounded-xl bg-rose-700 hover:bg-rose-800 text-white text-xs font-bold flex items-center space-x-1.5 shadow-sm transition-all cursor-pointer"
+                      title="데이터베이스(Firestore) 및 로컬의 모든 점심 신청 내역을 즉시 일괄 삭제합니다"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>전체 신청 내역 초기화</span>
+                    </button>
+                  )}
                   {selectedBookingIds.length > 0 && (
                     <button
                       type="button"
