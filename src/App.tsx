@@ -21,7 +21,8 @@ import {
   saveAdminSettingsToFirestore, 
   subscribeAdminSettingsFromFirestore,
   subscribeQuotaStatus,
-  isFirestoreQuotaExhausted
+  isFirestoreQuotaExhausted,
+  resetFirestoreQuotaCheck
 } from './firebase';
 import { 
   getKSTDateString, 
@@ -563,16 +564,25 @@ export default function App() {
 
         {/* Firestore Quota Notice / Local Offline Fallback Banner */}
         {isQuotaExhausted && (
-          <div className="flex items-start sm:items-center justify-between gap-3 p-3.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-xl text-amber-900 dark:text-amber-200 text-xs shadow-xs animate-fade-in">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-xl text-amber-900 dark:text-amber-200 text-xs shadow-xs animate-fade-in">
             <div className="flex items-start sm:items-center gap-2.5">
               <CloudOff className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5 sm:mt-0" />
               <div>
                 <span className="font-bold">로컬 안전 저장 모드 작동 중:</span> Firebase 일일 무료 할당량(Quota) 일시 초과로 인해 안전한 로컬 저장 모드로 전환되었습니다. 점심 신청 및 관리 기능은 정상 작동하며, 입력하신 데이터는 안전하게 보존됩니다.
               </div>
             </div>
-            <span className="px-2 py-0.5 text-[11px] font-semibold bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 rounded shrink-0">
-              데이터 보호 활성
-            </span>
+            <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+              <span className="px-2 py-0.5 text-[11px] font-semibold bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 rounded">
+                데이터 보호 활성
+              </span>
+              <button
+                onClick={resetFirestoreQuotaCheck}
+                className="px-2.5 py-0.5 text-[11px] font-bold bg-white dark:bg-slate-800 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 rounded hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors cursor-pointer"
+                title="Firebase 동기화 재연결 시도"
+              >
+                동기화 재시도
+              </button>
+            </div>
           </div>
         )}
 

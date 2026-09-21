@@ -8,10 +8,17 @@ import {
   onSnapshot,
   query,
   getDocs,
-  writeBatch
+  writeBatch,
+  terminate,
+  setLogLevel
 } from "firebase/firestore";
 import { Booking, Restaurant, Notice, ThemeConfig, SeoConfig } from "./types";
 import { getKSTDateString } from "./utils";
+
+// Suppress Firestore internal backoff retry logs and quota error console noise
+try {
+  setLogLevel('silent');
+} catch (e) {}
 
 const firebaseConfig = {
   apiKey: "AIzaSyAw7xQ8FxX0qwyN_XBx9GAq1nq7jIziWqE",
@@ -25,15 +32,47 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 
+const QUOTA_STORAGE_KEY = 'firestore_quota_exhausted_timestamp';
+
+// Quota typically resets on next day or after a cooling period.
+// If recorded within the last 4 hours, start in local mode to avoid slamming Firestore and triggering backoff loops.
+const getInitialQuotaState = (): boolean => {
+  try {
+    const saved = localStorage.getItem(QUOTA_STORAGE_KEY);
+    if (saved) {
+      const timestamp = parseInt(saved, 10);
+      if (!isNaN(timestamp) && Date.now() - timestamp < 4 * 60 * 60 * 1000) {
+        return true;
+      }
+    }
+  } catch (e) {}
+  return false;
+};
+
 // Track Firestore quota / offline state
-let quotaExhausted = false;
+let quotaExhausted = getInitialQuotaState();
 const quotaListeners = new Set<(isExhausted: boolean) => void>();
+
+// If already in exhausted state on startup, terminate immediately to prevent background webchannel attempts
+if (quotaExhausted) {
+  try {
+    terminate(db).catch(() => {});
+  } catch (e) {}
+}
 
 export const isFirestoreQuotaExhausted = (): boolean => quotaExhausted;
 
 export const setFirestoreQuotaExhausted = (exhausted: boolean) => {
   if (quotaExhausted !== exhausted) {
     quotaExhausted = exhausted;
+    try {
+      if (exhausted) {
+        localStorage.setItem(QUOTA_STORAGE_KEY, Date.now().toString());
+        terminate(db).catch(() => {});
+      } else {
+        localStorage.removeItem(QUOTA_STORAGE_KEY);
+      }
+    } catch (e) {}
     quotaListeners.forEach((fn) => {
       try {
         fn(quotaExhausted);
@@ -42,6 +81,13 @@ export const setFirestoreQuotaExhausted = (exhausted: boolean) => {
       }
     });
   }
+};
+
+export const resetFirestoreQuotaCheck = () => {
+  try {
+    localStorage.removeItem(QUOTA_STORAGE_KEY);
+  } catch (e) {}
+  window.location.reload();
 };
 
 export const subscribeQuotaStatus = (callback: (isExhausted: boolean) => void): (() => void) => {
@@ -334,13 +380,29 @@ export const subscribeAdminSettingsFromFirestore = (
 
 // 기존 함수와의 호환성 유지
 export const saveAdminData = async (data: any) => {
-  await setDoc(doc(db, "lunchData", "settings"), data, { merge: true });
+  if (quotaExhausted) return;
+  try {
+    await setDoc(doc(db, "lunchData", "settings"), data, { merge: true });
+  } catch (e) {
+    if (checkIsQuotaError(e)) {
+      setFirestoreQuotaExhausted(true);
+    }
+  }
 };
 
 export const subscribeAdminData = (callback: (data: any) => void) => {
-  return onSnapshot(doc(db, "lunchData", "settings"), (docSnap) => {
-    if (docSnap.exists()) {
-      callback(docSnap.data());
-    }
-  });
+  if (quotaExhausted) return () => {};
+  try {
+    return onSnapshot(doc(db, "lunchData", "settings"), (docSnap) => {
+      if (docSnap.exists()) {
+        callback(docSnap.data());
+      }
+    }, (err) => {
+      if (checkIsQuotaError(err)) {
+        setFirestoreQuotaExhausted(true);
+      }
+    });
+  } catch (e) {
+    return () => {};
+  }
 };
