@@ -25,6 +25,45 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 
+// Track Firestore quota / offline state
+let quotaExhausted = false;
+const quotaListeners = new Set<(isExhausted: boolean) => void>();
+
+export const isFirestoreQuotaExhausted = (): boolean => quotaExhausted;
+
+export const setFirestoreQuotaExhausted = (exhausted: boolean) => {
+  if (quotaExhausted !== exhausted) {
+    quotaExhausted = exhausted;
+    quotaListeners.forEach((fn) => {
+      try {
+        fn(quotaExhausted);
+      } catch (e) {
+        console.error(e);
+      }
+    });
+  }
+};
+
+export const subscribeQuotaStatus = (callback: (isExhausted: boolean) => void): (() => void) => {
+  quotaListeners.add(callback);
+  callback(quotaExhausted);
+  return () => {
+    quotaListeners.delete(callback);
+  };
+};
+
+export const checkIsQuotaError = (error: any): boolean => {
+  if (!error) return false;
+  const code = error.code || '';
+  const message = error.message || '';
+  return (
+    code === 'resource-exhausted' ||
+    message.includes('Quota exceeded') ||
+    message.includes('resource-exhausted') ||
+    message.includes('RESOURCE_EXHAUSTED')
+  );
+};
+
 export const cleanBookingForFirestore = (booking: Booking): Record<string, any> => {
   return {
     id: booking.id || `book-${Date.now()}`,
@@ -59,12 +98,21 @@ export const cleanBookingForFirestore = (booking: Booking): Record<string, any> 
  * 점심 예약 실시간 Firestore 저장 (학생 신청 시 즉시 저장)
  */
 export const saveBookingToFirestore = async (booking: Booking): Promise<void> => {
+  if (quotaExhausted) {
+    console.info("[Firestore] Local storage fallback active (Quota temporarily exhausted).");
+    return;
+  }
   try {
     const cleaned = cleanBookingForFirestore(booking);
     const bookingDoc = doc(db, "bookings", cleaned.id);
     await setDoc(bookingDoc, cleaned, { merge: true });
     console.log("Firestore successfully saved booking:", cleaned.id);
   } catch (error) {
+    if (checkIsQuotaError(error)) {
+      setFirestoreQuotaExhausted(true);
+      console.warn("[Firestore] Daily quota reached during save. Operating in local storage mode.");
+      return;
+    }
     console.error("Firestore saveBookingToFirestore error:", error);
   }
 };
@@ -73,12 +121,17 @@ export const saveBookingToFirestore = async (booking: Booking): Promise<void> =>
  * 점심 예약 수정 (관리자 모드에서 편집 시 즉시 저장)
  */
 export const updateBookingInFirestore = async (booking: Booking): Promise<void> => {
+  if (quotaExhausted) return;
   try {
     const cleaned = cleanBookingForFirestore(booking);
     const bookingDoc = doc(db, "bookings", cleaned.id);
     await setDoc(bookingDoc, cleaned, { merge: true });
     console.log("Firestore successfully updated booking:", cleaned.id);
   } catch (error) {
+    if (checkIsQuotaError(error)) {
+      setFirestoreQuotaExhausted(true);
+      return;
+    }
     console.error("Firestore updateBookingInFirestore error:", error);
   }
 };
@@ -87,11 +140,16 @@ export const updateBookingInFirestore = async (booking: Booking): Promise<void> 
  * 점심 예약 삭제
  */
 export const deleteBookingFromFirestore = async (bookingId: string): Promise<void> => {
+  if (quotaExhausted) return;
   try {
     const bookingDoc = doc(db, "bookings", bookingId);
     await deleteDoc(bookingDoc);
     console.log("Firestore successfully deleted booking:", bookingId);
   } catch (error) {
+    if (checkIsQuotaError(error)) {
+      setFirestoreQuotaExhausted(true);
+      return;
+    }
     console.error("Firestore deleteBookingFromFirestore error:", error);
   }
 };
@@ -100,6 +158,7 @@ export const deleteBookingFromFirestore = async (bookingId: string): Promise<voi
  * 모든 점심 신청 내역 일괄 삭제 (즉시 전체 삭제 및 매일 자정 자동 초기화용)
  */
 export const clearAllBookingsFromFirestore = async (): Promise<number> => {
+  if (quotaExhausted) return 0;
   try {
     const q = query(collection(db, "bookings"));
     const snapshot = await getDocs(q);
@@ -115,6 +174,10 @@ export const clearAllBookingsFromFirestore = async (): Promise<number> => {
     console.log(`Firestore: Successfully cleared ${snapshot.size} bookings.`);
     return snapshot.size;
   } catch (error) {
+    if (checkIsQuotaError(error)) {
+      setFirestoreQuotaExhausted(true);
+      return 0;
+    }
     console.error("Firestore clearAllBookingsFromFirestore error:", error);
     throw error;
   }
@@ -126,10 +189,15 @@ export const clearAllBookingsFromFirestore = async (): Promise<number> => {
 export const subscribeBookingsFromFirestore = (
   onSuccess: (bookings: Booking[]) => void,
   onError?: (error: any) => void
-) => {
+): (() => void) => {
+  if (quotaExhausted) {
+    console.info("[Firestore] Quota exhausted: bookings subscription skipped, using local data.");
+    return () => {};
+  }
   try {
     const q = query(collection(db, "bookings"));
-    return onSnapshot(
+    let unsubscribe: (() => void) | null = null;
+    unsubscribe = onSnapshot(
       q,
       (snapshot) => {
         const list: Booking[] = [];
@@ -167,11 +235,27 @@ export const subscribeBookingsFromFirestore = (
         onSuccess(list);
       },
       (err) => {
-        console.warn("Firestore bookings subscription notice:", err);
+        if (checkIsQuotaError(err)) {
+          setFirestoreQuotaExhausted(true);
+          console.warn("[Firestore] Daily free quota exceeded. Halting Firestore subscription to stop retry loops.");
+          if (unsubscribe) {
+            try {
+              unsubscribe();
+            } catch (e) {}
+          }
+        } else {
+          console.warn("Firestore bookings subscription notice:", err);
+        }
         if (onError) onError(err);
       }
     );
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   } catch (err) {
+    if (checkIsQuotaError(err)) {
+      setFirestoreQuotaExhausted(true);
+    }
     console.warn("Firestore bookings subscription error:", err);
     return () => {};
   }
@@ -188,10 +272,16 @@ export const saveAdminSettingsToFirestore = async (data: {
   lastResetDateKST?: string;
   [key: string]: any;
 }): Promise<void> => {
+  if (quotaExhausted) return;
   try {
     await setDoc(doc(db, "lunchData", "settings"), data, { merge: true });
     console.log("Firestore: Admin settings successfully synchronized.");
   } catch (error) {
+    if (checkIsQuotaError(error)) {
+      setFirestoreQuotaExhausted(true);
+      console.warn("[Firestore] Daily quota reached during settings save.");
+      return;
+    }
     console.error("Firestore saveAdminSettingsToFirestore error:", error);
     throw error;
   }
@@ -203,19 +293,43 @@ export const saveAdminSettingsToFirestore = async (data: {
 export const subscribeAdminSettingsFromFirestore = (
   callback: (data: any) => void,
   onError?: (error: any) => void
-) => {
-  return onSnapshot(
-    doc(db, "lunchData", "settings"),
-    (docSnap) => {
-      if (docSnap.exists()) {
-        callback(docSnap.data());
+): (() => void) => {
+  if (quotaExhausted) {
+    return () => {};
+  }
+  try {
+    let unsubscribe: (() => void) | null = null;
+    unsubscribe = onSnapshot(
+      doc(db, "lunchData", "settings"),
+      (docSnap) => {
+        if (docSnap.exists()) {
+          callback(docSnap.data());
+        }
+      },
+      (err) => {
+        if (checkIsQuotaError(err)) {
+          setFirestoreQuotaExhausted(true);
+          console.warn("[Firestore] Daily free quota exceeded. Halting settings subscription to stop retry loops.");
+          if (unsubscribe) {
+            try {
+              unsubscribe();
+            } catch (e) {}
+          }
+        } else {
+          console.warn("Firestore settings subscription notice:", err);
+        }
+        if (onError) onError(err);
       }
-    },
-    (err) => {
-      console.warn("Firestore settings subscription notice:", err);
-      if (onError) onError(err);
+    );
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  } catch (err) {
+    if (checkIsQuotaError(err)) {
+      setFirestoreQuotaExhausted(true);
     }
-  );
+    return () => {};
+  }
 };
 
 // 기존 함수와의 호환성 유지

@@ -19,12 +19,13 @@ import {
   clearAllBookingsFromFirestore,
   subscribeBookingsFromFirestore, 
   saveAdminSettingsToFirestore, 
-  subscribeAdminSettingsFromFirestore 
+  subscribeAdminSettingsFromFirestore,
+  subscribeQuotaStatus,
+  isFirestoreQuotaExhausted
 } from './firebase';
 import { 
   getKSTDateString, 
   isBookingFromTodayKST, 
-  isBookingFromPastDaysKST, 
   getCurrentDateTimeString 
 } from './utils';
 import { Navbar } from './components/Navbar';
@@ -35,7 +36,7 @@ import { LiveSummaryWidget } from './components/LiveSummaryWidget';
 import { AdminPanel } from './components/AdminPanel';
 import { ShareModal } from './components/ShareModal';
 import { AdminAuthModal } from './components/AdminAuthModal';
-import { ShieldCheck, User, Sparkles, Lock, Clock } from 'lucide-react';
+import { ShieldCheck, User, Sparkles, Lock, Clock, AlertTriangle, CloudOff } from 'lucide-react';
 
 const MENU_DATA_VERSION = 'v4_20260917_remove_chingmarei_voucher_notice';
 const KST_RESET_DATE_KEY = 'app_bookings_last_reset_kst';
@@ -138,6 +139,7 @@ export default function App() {
   });
   const [isAdminAuthModalOpen, setIsAdminAuthModalOpen] = useState<boolean>(false);
   const [sharingBooking, setSharingBooking] = useState<Booking | null>(null);
+  const [isQuotaExhausted, setIsQuotaExhausted] = useState<boolean>(() => isFirestoreQuotaExhausted());
 
   // Admin access handler protected with PIN
   const handleRequestAdminMode = () => {
@@ -206,30 +208,25 @@ export default function App() {
     return () => clearInterval(intervalId);
   }, []);
 
-  // 2. Real-time Firestore synchronization for Bookings and Admin Settings
+  // 2. Real-time Firestore synchronization for Bookings, Admin Settings, and Quota State
   useEffect(() => {
+    // Listen for Firestore quota availability changes
+    const unsubscribeQuota = subscribeQuotaStatus((exhausted) => {
+      setIsQuotaExhausted(exhausted);
+    });
+
     // 1. Subscribe to Bookings from Firestore with real-time multi-device sync
     const unsubscribeBookings = subscribeBookingsFromFirestore((remoteBookings) => {
       if (remoteBookings && Array.isArray(remoteBookings)) {
         const todayKST = getKSTDateString();
         const activeTodayBookings: Booking[] = [];
-        const pastDayBookingIds: string[] = [];
 
+        // Strictly keep only bookings for today (KST)
         remoteBookings.forEach((b) => {
           if (isBookingFromTodayKST(b, todayKST)) {
             activeTodayBookings.push(b);
-          } else if (isBookingFromPastDaysKST(b, todayKST)) {
-            pastDayBookingIds.push(b.id);
           }
         });
-
-        // Background cleanup of past-day bookings only (today's bookings are NEVER touched!)
-        if (pastDayBookingIds.length > 0) {
-          console.log(`[Firestore] Purging ${pastDayBookingIds.length} past-day bookings:`, pastDayBookingIds);
-          pastDayBookingIds.forEach((id) => {
-            deleteBookingFromFirestore(id).catch(() => {});
-          });
-        }
 
         // Sort active today bookings (newest first)
         activeTodayBookings.sort((a, b) => {
@@ -289,6 +286,7 @@ export default function App() {
     });
 
     return () => {
+      unsubscribeQuota();
       unsubscribeBookings();
       unsubscribeSettings();
     };
@@ -562,6 +560,21 @@ export default function App() {
           themeConfig={themeConfig}
           onSelectAdminNoticeTab={handleRequestAdminMode}
         />
+
+        {/* Firestore Quota Notice / Local Offline Fallback Banner */}
+        {isQuotaExhausted && (
+          <div className="flex items-start sm:items-center justify-between gap-3 p-3.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-xl text-amber-900 dark:text-amber-200 text-xs shadow-xs animate-fade-in">
+            <div className="flex items-start sm:items-center gap-2.5">
+              <CloudOff className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5 sm:mt-0" />
+              <div>
+                <span className="font-bold">로컬 안전 저장 모드 작동 중:</span> Firebase 일일 무료 할당량(Quota) 일시 초과로 인해 안전한 로컬 저장 모드로 전환되었습니다. 점심 신청 및 관리 기능은 정상 작동하며, 입력하신 데이터는 안전하게 보존됩니다.
+              </div>
+            </div>
+            <span className="px-2 py-0.5 text-[11px] font-semibold bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 rounded shrink-0">
+              데이터 보호 활성
+            </span>
+          </div>
+        )}
 
         {/* View Mode Switching Notice Badge */}
         <div className="flex flex-wrap items-center justify-between gap-2 px-1">
