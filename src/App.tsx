@@ -6,7 +6,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
   INITIAL_RESTAURANTS, 
-  INITIAL_BOOKINGS, 
   INITIAL_NOTICES, 
   DEFAULT_THEME_CONFIG, 
   DEFAULT_SEO_CONFIG 
@@ -76,21 +75,10 @@ export default function App() {
     return INITIAL_RESTAURANTS;
   });
 
-  const [bookings, setBookings] = useState<Booking[]>(() => {
-    const todayKST = getKSTDateString();
-    const saved = localStorage.getItem('app_bookings');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed.filter((b: Booking) => isBookingFromTodayKST(b, todayKST));
-        }
-      } catch (e) {
-        console.error('Error parsing stored bookings:', e);
-      }
-    }
-    return [];
-  });
+  // 1. Single Source of Truth for bookings: Database (Firestore) only.
+  // Never initialize from mock data or stale localStorage so deletions in DB are strictly respected across all devices and refreshes.
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [isBookingsLoaded, setIsBookingsLoaded] = useState<boolean>(false);
 
   const [notices, setNotices] = useState<Notice[]>(() => {
     const saved = localStorage.getItem('app_notices');
@@ -169,14 +157,18 @@ export default function App() {
     setIsAdminMode(false);
   };
 
-  // Sync state to localStorage
+  // Clean up any legacy localStorage bookings or quota flags on load
+  useEffect(() => {
+    try {
+      localStorage.removeItem('app_bookings');
+      localStorage.removeItem('firestore_quota_exhausted_timestamp');
+    } catch (e) {}
+  }, []);
+
+  // Sync admin settings to localStorage for local fast preview
   useEffect(() => {
     localStorage.setItem('app_restaurants', JSON.stringify(restaurants));
   }, [restaurants]);
-
-  useEffect(() => {
-    localStorage.setItem('app_bookings', JSON.stringify(bookings));
-  }, [bookings]);
 
   useEffect(() => {
     localStorage.setItem('app_notices', JSON.stringify(notices));
@@ -202,7 +194,6 @@ export default function App() {
         console.log(`[KST Midnight Rollover] New day detected in KST: ${lastDateKST} -> ${currentDateKST}`);
         lastDateKST = currentDateKST;
         setBookings((prev) => prev.filter((b) => isBookingFromTodayKST(b, currentDateKST)));
-        localStorage.setItem('app_bookings', '[]');
       }
     }, 10000); // Check every 10 seconds
 
@@ -237,11 +228,7 @@ export default function App() {
         });
 
         setBookings(activeTodayBookings);
-        try {
-          localStorage.setItem('app_bookings', JSON.stringify(activeTodayBookings));
-        } catch (e) {
-          console.error('Failed to write bookings to localStorage:', e);
-        }
+        setIsBookingsLoaded(true);
       }
     });
 
@@ -401,12 +388,10 @@ export default function App() {
     try {
       await clearAllBookingsFromFirestore();
       setBookings([]);
-      localStorage.setItem('app_bookings', '[]');
-      console.log('[Firestore] All bookings cleared.');
+      console.log('[Firestore DB] All bookings successfully deleted from database.');
     } catch (err) {
-      console.error('Failed to clear all bookings:', err);
-      setBookings([]);
-      localStorage.setItem('app_bookings', '[]');
+      console.error('[Firestore DB] Failed to clear all bookings:', err);
+      throw err;
     }
   };
 
@@ -423,22 +408,16 @@ export default function App() {
       rawCompanions: newBooking.rawCompanions || [],
     };
 
-    // 1. Immediately update state and save to localStorage synchronously
-    setBookings((prev) => {
-      const updated = [sanitizedBooking, ...prev.filter((b) => b.id !== sanitizedBooking.id)];
-      try {
-        localStorage.setItem('app_bookings', JSON.stringify(updated));
-      } catch (e) {
-        console.error('LocalStorage write error:', e);
-      }
-      return updated;
-    });
+    // 1. Optimistically update local state
+    setBookings((prev) => [sanitizedBooking, ...prev.filter((b) => b.id !== sanitizedBooking.id)]);
 
-    // 2. Persist to Firestore so all students and admin browsers receive it in real-time
+    // 2. Persist to Firestore DB (Single Source of Truth)
     try {
       await saveBookingToFirestore(sanitizedBooking);
+      console.log('[Firestore DB] Booking saved to DB:', sanitizedBooking.id);
     } catch (err) {
-      console.warn('Failed to sync booking to Firestore, but preserved in localStorage:', err);
+      console.error('[Firestore DB] Failed to save booking to DB:', err);
+      throw err;
     }
   };
 
@@ -453,38 +432,28 @@ export default function App() {
       rawCompanions: updatedBooking.rawCompanions || [],
     };
 
-    setBookings((prev) => {
-      const updated = prev.map((b) => (b.id === sanitized.id ? sanitized : b));
-      try {
-        localStorage.setItem('app_bookings', JSON.stringify(updated));
-      } catch (e) {
-        console.error('LocalStorage update error:', e);
-      }
-      return updated;
-    });
+    setBookings((prev) => prev.map((b) => (b.id === sanitized.id ? sanitized : b)));
 
     try {
       await updateBookingInFirestore(sanitized);
+      console.log('[Firestore DB] Booking updated in DB:', sanitized.id);
     } catch (err) {
-      console.warn('Failed to update booking in Firestore, but preserved in localStorage:', err);
+      console.error('[Firestore DB] Failed to update booking in DB:', err);
+      throw err;
     }
   };
 
   const handleDeleteBooking = async (bookingId: string) => {
-    setBookings((prev) => {
-      const updated = prev.filter((b) => b.id !== bookingId);
-      try {
-        localStorage.setItem('app_bookings', JSON.stringify(updated));
-      } catch (e) {
-        console.error('LocalStorage delete error:', e);
-      }
-      return updated;
-    });
+    // 1. Optimistic UI update
+    setBookings((prev) => prev.filter((b) => b.id !== bookingId));
 
+    // 2. Direct Firestore deleteDoc execution on database
     try {
       await deleteBookingFromFirestore(bookingId);
+      console.log('[Firestore DB] Booking successfully deleted from DB:', bookingId);
     } catch (err) {
-      console.warn('Failed to delete booking from Firestore, but updated in localStorage:', err);
+      console.error('[Firestore DB] Failed to delete booking from DB:', err);
+      throw err;
     }
   };
 
@@ -494,7 +463,6 @@ export default function App() {
       localStorage.setItem('app_theme_config', JSON.stringify(themeConfig));
       localStorage.setItem('app_notices', JSON.stringify(notices));
       localStorage.setItem('app_seo_config', JSON.stringify(seoConfig));
-      localStorage.setItem('app_bookings', JSON.stringify(bookings));
     } catch (e) {
       console.error(e);
     }
@@ -508,9 +476,9 @@ export default function App() {
         seoConfig,
         lastResetDateKST: getKSTDateString(),
       });
-      console.log('Admin settings saved to Firestore');
+      console.log('[Firestore DB] Admin settings saved to DB');
     } catch (err) {
-      console.error('Failed to sync admin settings to Firestore:', err);
+      console.error('[Firestore DB] Failed to sync admin settings to DB:', err);
     }
   };
 

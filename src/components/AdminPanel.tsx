@@ -25,7 +25,11 @@ import {
 import { Restaurant, MenuItem, Booking, Notice, ThemeConfig, SeoConfig } from '../types';
 import { formatKRW, generateRestaurantReservationText, copyToClipboard, getCurrentDateTimeString, formatDisplayCreatedAt, getKSTDateString } from '../utils';
 import { EditBookingModal } from './EditBookingModal';
-import { saveAdminSettingsToFirestore } from '../firebase';
+import { 
+  saveAdminSettingsToFirestore, 
+  deleteBookingFromFirestore, 
+  deleteMultipleBookingsFromFirestore 
+} from '../firebase';
 
 interface AdminPanelProps {
   restaurants: Restaurant[];
@@ -86,20 +90,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }, 4500);
   };
 
-  // Direct localStorage helper so changes strictly survive page refresh (F5)
+  // Direct localStorage helper for admin configurations (restaurants, theme, notices, seo)
   const persistToStorage = (
     updatedRestaurants = restaurants,
     updatedTheme = themeConfig,
     updatedNotices = notices,
-    updatedSeo = seoConfig,
-    updatedBookings = bookings
+    updatedSeo = seoConfig
   ) => {
     try {
       localStorage.setItem('app_restaurants', JSON.stringify(updatedRestaurants));
       localStorage.setItem('app_theme_config', JSON.stringify(updatedTheme));
       localStorage.setItem('app_notices', JSON.stringify(updatedNotices));
       localStorage.setItem('app_seo_config', JSON.stringify(updatedSeo));
-      localStorage.setItem('app_bookings', JSON.stringify(updatedBookings));
 
       // Asynchronously broadcast to Firestore so all clients get the latest settings
       saveAdminSettingsToFirestore({
@@ -214,7 +216,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
     const updated = bookings.map((b) => (b.id === bookingId ? { ...b, status: newStatus } : b));
     onUpdateBookings(updated);
-    persistToStorage(restaurants, themeConfig, notices, seoConfig, updated);
+    persistToStorage(restaurants, themeConfig, notices, seoConfig);
   };
 
   // Modal states for deleting bookings
@@ -223,36 +225,46 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState<boolean>(false);
 
   const confirmDeleteBooking = async (bookingId: string) => {
+    // 1. Optimistically update local state & selection
     const updated = bookings.filter((b) => b.id !== bookingId);
     onUpdateBookings(updated);
     setSelectedBookingIds((prev) => prev.filter((id) => id !== bookingId));
-    persistToStorage(restaurants, themeConfig, notices, seoConfig, updated);
-    triggerSaveNotification('점심 신청 내역이 데이터베이스(DB)에서 삭제되었습니다.');
     setBookingToDelete(null);
 
-    if (onDeleteBooking) {
-      try {
+    // 2. Directly call Firestore deleteDoc to permanently delete the document from the database
+    try {
+      if (onDeleteBooking) {
         await onDeleteBooking(bookingId);
-      } catch (e) {
-        console.error('Firestore delete error in AdminPanel:', e);
+      } else {
+        await deleteBookingFromFirestore(bookingId);
       }
+      triggerSaveNotification('점심 신청 내역이 데이터베이스(Firestore DB)에서 영구 삭제되었습니다.');
+    } catch (e) {
+      console.error('[AdminPanel] Firestore deleteDoc error:', e);
+      triggerSaveNotification('데이터베이스 삭제 중 오류가 발생했습니다.');
     }
   };
 
   const confirmBulkDelete = async () => {
     if (selectedBookingIds.length === 0) return;
     const idsToDelete = [...selectedBookingIds];
+    
+    // 1. Optimistically update local state
     const updated = bookings.filter((b) => !idsToDelete.includes(b.id));
     onUpdateBookings(updated);
     setSelectedBookingIds([]);
-    persistToStorage(restaurants, themeConfig, notices, seoConfig, updated);
-    triggerSaveNotification(`선택한 ${idsToDelete.length}개의 신청 내역이 데이터베이스(DB)에서 삭제되었습니다.`);
     setIsBulkDeleteModalOpen(false);
 
-    if (onDeleteBooking) {
-      await Promise.allSettled(
-        idsToDelete.map((id) => onDeleteBooking(id))
-      );
+    // 2. Directly call Firestore batch delete in database
+    try {
+      await deleteMultipleBookingsFromFirestore(idsToDelete);
+      triggerSaveNotification(`선택한 ${idsToDelete.length}개의 신청 내역이 데이터베이스(DB)에서 영구 삭제되었습니다.`);
+    } catch (e) {
+      console.error('[AdminPanel] Batch DB delete error, falling back to individual delete:', e);
+      if (onDeleteBooking) {
+        await Promise.allSettled(idsToDelete.map((id) => onDeleteBooking(id)));
+      }
+      triggerSaveNotification(`선택한 ${idsToDelete.length}개의 신청 내역 삭제가 완료되었습니다.`);
     }
   };
 
@@ -316,7 +328,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       }
     }
     onUpdateBookings(newBookings);
-    persistToStorage(restaurants, themeConfig, notices, seoConfig, newBookings);
+    persistToStorage(restaurants, themeConfig, notices, seoConfig);
     triggerSaveNotification(`[${updatedBooking.rawName || '신규'} 조] 예약 정보가 실시간 반영되었습니다.`);
   };
 
@@ -391,8 +403,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       }
       onUpdateBookings([]);
       setSelectedBookingIds([]);
-      persistToStorage(restaurants, themeConfig, notices, seoConfig, []);
-      triggerSaveNotification('모든 점심 신청 내역이 데이터베이스(Firestore) 및 로컬에서 성공적으로 초기화(삭제)되었습니다.');
+      triggerSaveNotification('모든 점심 신청 내역이 데이터베이스(Firestore DB)에서 영구 초기화(삭제)되었습니다.');
     } catch (e) {
       console.error('Failed to clear all bookings:', e);
       alert('신청 내역 초기화 중 오류가 발생했습니다.');

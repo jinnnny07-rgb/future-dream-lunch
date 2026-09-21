@@ -5,111 +5,35 @@ import {
   setDoc, 
   deleteDoc, 
   collection, 
-  onSnapshot,
-  query,
-  getDocs,
+  onSnapshot, 
+  query, 
+  getDocs, 
   writeBatch,
-  terminate,
   setLogLevel
 } from "firebase/firestore";
 import { Booking, Restaurant, Notice, ThemeConfig, SeoConfig } from "./types";
 import { getKSTDateString } from "./utils";
 
-// Suppress Firestore internal backoff retry logs and quota error console noise
+// Suppress excessive internal Firestore connection retry logs
 try {
   setLogLevel('silent');
 } catch (e) {}
 
+// Support Vite environment variables (Vercel, Netlify, GitHub Pages) with robust default fallback
+const metaEnv = typeof import.meta !== 'undefined' && (import.meta as any).env ? (import.meta as any).env : {};
 const firebaseConfig = {
-  apiKey: "AIzaSyAw7xQ8FxX0qwyN_XBx9GAq1nq7jIziWqE",
-  authDomain: "future-dream-lunch.firebaseapp.com",
-  projectId: "future-dream-lunch",
-  storageBucket: "future-dream-lunch.firebasestorage.app",
-  messagingSenderId: "104172650549",
-  appId: "1:104172650549:web:e66bac8c0c2ccdcd03717c"
+  apiKey: metaEnv.VITE_FIREBASE_API_KEY || "AIzaSyAw7xQ8FxX0qwyN_XBx9GAq1nq7jIziWqE",
+  authDomain: metaEnv.VITE_FIREBASE_AUTH_DOMAIN || "future-dream-lunch.firebaseapp.com",
+  projectId: metaEnv.VITE_FIREBASE_PROJECT_ID || "future-dream-lunch",
+  storageBucket: metaEnv.VITE_FIREBASE_STORAGE_BUCKET || "future-dream-lunch.firebasestorage.app",
+  messagingSenderId: metaEnv.VITE_FIREBASE_MESSAGING_SENDER_ID || "104172650549",
+  appId: metaEnv.VITE_FIREBASE_APP_ID || "1:104172650549:web:e66bac8c0c2ccdcd03717c"
 };
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 
-const QUOTA_STORAGE_KEY = 'firestore_quota_exhausted_timestamp';
-
-// Quota typically resets on next day or after a cooling period.
-// If recorded within the last 4 hours, start in local mode to avoid slamming Firestore and triggering backoff loops.
-const getInitialQuotaState = (): boolean => {
-  try {
-    const saved = localStorage.getItem(QUOTA_STORAGE_KEY);
-    if (saved) {
-      const timestamp = parseInt(saved, 10);
-      if (!isNaN(timestamp) && Date.now() - timestamp < 4 * 60 * 60 * 1000) {
-        return true;
-      }
-    }
-  } catch (e) {}
-  return false;
-};
-
-// Track Firestore quota / offline state
-let quotaExhausted = getInitialQuotaState();
-const quotaListeners = new Set<(isExhausted: boolean) => void>();
-
-// If already in exhausted state on startup, terminate immediately to prevent background webchannel attempts
-if (quotaExhausted) {
-  try {
-    terminate(db).catch(() => {});
-  } catch (e) {}
-}
-
-export const isFirestoreQuotaExhausted = (): boolean => quotaExhausted;
-
-export const setFirestoreQuotaExhausted = (exhausted: boolean) => {
-  if (quotaExhausted !== exhausted) {
-    quotaExhausted = exhausted;
-    try {
-      if (exhausted) {
-        localStorage.setItem(QUOTA_STORAGE_KEY, Date.now().toString());
-        terminate(db).catch(() => {});
-      } else {
-        localStorage.removeItem(QUOTA_STORAGE_KEY);
-      }
-    } catch (e) {}
-    quotaListeners.forEach((fn) => {
-      try {
-        fn(quotaExhausted);
-      } catch (e) {
-        console.error(e);
-      }
-    });
-  }
-};
-
-export const resetFirestoreQuotaCheck = () => {
-  try {
-    localStorage.removeItem(QUOTA_STORAGE_KEY);
-  } catch (e) {}
-  window.location.reload();
-};
-
-export const subscribeQuotaStatus = (callback: (isExhausted: boolean) => void): (() => void) => {
-  quotaListeners.add(callback);
-  callback(quotaExhausted);
-  return () => {
-    quotaListeners.delete(callback);
-  };
-};
-
-export const checkIsQuotaError = (error: any): boolean => {
-  if (!error) return false;
-  const code = error.code || '';
-  const message = error.message || '';
-  return (
-    code === 'resource-exhausted' ||
-    message.includes('Quota exceeded') ||
-    message.includes('resource-exhausted') ||
-    message.includes('RESOURCE_EXHAUSTED')
-  );
-};
-
+// Helper to sanitize booking object before writing to Firestore
 export const cleanBookingForFirestore = (booking: Booking): Record<string, any> => {
   return {
     id: booking.id || `book-${Date.now()}`,
@@ -141,109 +65,79 @@ export const cleanBookingForFirestore = (booking: Booking): Record<string, any> 
 };
 
 /**
- * 점심 예약 실시간 Firestore 저장 (학생 신청 시 즉시 저장)
+ * 1. 점심 예약 실시간 Firestore 저장 (학생 신청 시 즉시 저장)
  */
 export const saveBookingToFirestore = async (booking: Booking): Promise<void> => {
-  if (quotaExhausted) {
-    console.info("[Firestore] Local storage fallback active (Quota temporarily exhausted).");
-    return;
-  }
-  try {
-    const cleaned = cleanBookingForFirestore(booking);
-    const bookingDoc = doc(db, "bookings", cleaned.id);
-    await setDoc(bookingDoc, cleaned, { merge: true });
-    console.log("Firestore successfully saved booking:", cleaned.id);
-  } catch (error) {
-    if (checkIsQuotaError(error)) {
-      setFirestoreQuotaExhausted(true);
-      console.warn("[Firestore] Daily quota reached during save. Operating in local storage mode.");
-      return;
-    }
-    console.error("Firestore saveBookingToFirestore error:", error);
-  }
+  const cleaned = cleanBookingForFirestore(booking);
+  const bookingDoc = doc(db, "bookings", cleaned.id);
+  await setDoc(bookingDoc, cleaned, { merge: true });
+  console.log("[Firestore DB] Successfully saved booking:", cleaned.id);
 };
 
 /**
- * 점심 예약 수정 (관리자 모드에서 편집 시 즉시 저장)
+ * 2. 점심 예약 수정 (관리자 모드에서 편집 시 즉시 저장)
  */
 export const updateBookingInFirestore = async (booking: Booking): Promise<void> => {
-  if (quotaExhausted) return;
-  try {
-    const cleaned = cleanBookingForFirestore(booking);
-    const bookingDoc = doc(db, "bookings", cleaned.id);
-    await setDoc(bookingDoc, cleaned, { merge: true });
-    console.log("Firestore successfully updated booking:", cleaned.id);
-  } catch (error) {
-    if (checkIsQuotaError(error)) {
-      setFirestoreQuotaExhausted(true);
-      return;
-    }
-    console.error("Firestore updateBookingInFirestore error:", error);
-  }
+  const cleaned = cleanBookingForFirestore(booking);
+  const bookingDoc = doc(db, "bookings", cleaned.id);
+  await setDoc(bookingDoc, cleaned, { merge: true });
+  console.log("[Firestore DB] Successfully updated booking:", cleaned.id);
 };
 
 /**
- * 점심 예약 삭제
+ * 3. [진짜 DB 삭제] 개별 점심 예약 삭제 (Firestore deleteDoc 직접 호출)
+ * - 단순 로컬 상태 삭제가 아닌, Firestore 데이터베이스 원본 문서를 삭제합니다.
  */
 export const deleteBookingFromFirestore = async (bookingId: string): Promise<void> => {
-  if (quotaExhausted) return;
-  try {
-    const bookingDoc = doc(db, "bookings", bookingId);
-    await deleteDoc(bookingDoc);
-    console.log("Firestore successfully deleted booking:", bookingId);
-  } catch (error) {
-    if (checkIsQuotaError(error)) {
-      setFirestoreQuotaExhausted(true);
-      return;
-    }
-    console.error("Firestore deleteBookingFromFirestore error:", error);
-  }
+  if (!bookingId) return;
+  const bookingDoc = doc(db, "bookings", bookingId);
+  await deleteDoc(bookingDoc);
+  console.log("[Firestore DB] Document successfully deleted from DB:", bookingId);
 };
 
 /**
- * 모든 점심 신청 내역 일괄 삭제 (즉시 전체 삭제 및 매일 자정 자동 초기화용)
+ * 4. [진짜 DB 일괄 삭제] 다중 선택 점심 예약 일괄 삭제 (Firestore writeBatch 사용)
+ */
+export const deleteMultipleBookingsFromFirestore = async (bookingIds: string[]): Promise<void> => {
+  if (!bookingIds || bookingIds.length === 0) return;
+  const batch = writeBatch(db);
+  bookingIds.forEach((id) => {
+    batch.delete(doc(db, "bookings", id));
+  });
+  await batch.commit();
+  console.log(`[Firestore DB] Successfully batch-deleted ${bookingIds.length} bookings from DB.`);
+};
+
+/**
+ * 5. [진짜 DB 전체 초기화] 모든 점심 신청 내역 일괄 삭제 (Firestore writeBatch)
  */
 export const clearAllBookingsFromFirestore = async (): Promise<number> => {
-  if (quotaExhausted) return 0;
-  try {
-    const q = query(collection(db, "bookings"));
-    const snapshot = await getDocs(q);
-    if (snapshot.empty) {
-      console.log("Firestore: No bookings to clear.");
-      return 0;
-    }
-    const batch = writeBatch(db);
-    snapshot.forEach((docSnap) => {
-      batch.delete(docSnap.ref);
-    });
-    await batch.commit();
-    console.log(`Firestore: Successfully cleared ${snapshot.size} bookings.`);
-    return snapshot.size;
-  } catch (error) {
-    if (checkIsQuotaError(error)) {
-      setFirestoreQuotaExhausted(true);
-      return 0;
-    }
-    console.error("Firestore clearAllBookingsFromFirestore error:", error);
-    throw error;
+  const q = query(collection(db, "bookings"));
+  const snapshot = await getDocs(q);
+  if (snapshot.empty) {
+    console.log("[Firestore DB] No bookings to clear in DB.");
+    return 0;
   }
+  const batch = writeBatch(db);
+  snapshot.forEach((docSnap) => {
+    batch.delete(docSnap.ref);
+  });
+  await batch.commit();
+  console.log(`[Firestore DB] Successfully cleared ${snapshot.size} bookings from DB.`);
+  return snapshot.size;
 };
 
 /**
- * 실시간 전체 점심 예약 구독 (학생/관리자 모든 기기 실시간 동기화)
+ * 6. [실시간 리스너] 전체 점심 예약 구독 (onSnapshot)
+ * - DB에서 삭제되면 onSnapshot을 통해 연결된 모든 기기, 브라우저, 새로고침 시에도 동일하게 즉시 삭제 반영
  */
 export const subscribeBookingsFromFirestore = (
   onSuccess: (bookings: Booking[]) => void,
   onError?: (error: any) => void
 ): (() => void) => {
-  if (quotaExhausted) {
-    console.info("[Firestore] Quota exhausted: bookings subscription skipped, using local data.");
-    return () => {};
-  }
   try {
     const q = query(collection(db, "bookings"));
-    let unsubscribe: (() => void) | null = null;
-    unsubscribe = onSnapshot(
+    const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
         const list: Booking[] = [];
@@ -272,43 +166,30 @@ export const subscribeBookingsFromFirestore = (
             });
           }
         });
+
         // 최신 접수순 정렬 (ID 또는 timestamp 기준 내림차순)
         list.sort((a, b) => {
           const timeA = (a as any).updatedAt || parseInt(a.id.replace(/\D/g, ''), 10) || 0;
           const timeB = (b as any).updatedAt || parseInt(b.id.replace(/\D/g, ''), 10) || 0;
           return timeB - timeA;
         });
+
         onSuccess(list);
       },
       (err) => {
-        if (checkIsQuotaError(err)) {
-          setFirestoreQuotaExhausted(true);
-          console.warn("[Firestore] Daily free quota exceeded. Halting Firestore subscription to stop retry loops.");
-          if (unsubscribe) {
-            try {
-              unsubscribe();
-            } catch (e) {}
-          }
-        } else {
-          console.warn("Firestore bookings subscription notice:", err);
-        }
+        console.warn("[Firestore DB] Bookings onSnapshot notice:", err);
         if (onError) onError(err);
       }
     );
-    return () => {
-      if (unsubscribe) unsubscribe();
-    };
+    return unsubscribe;
   } catch (err) {
-    if (checkIsQuotaError(err)) {
-      setFirestoreQuotaExhausted(true);
-    }
-    console.warn("Firestore bookings subscription error:", err);
+    console.error("[Firestore DB] Bookings subscription error:", err);
     return () => {};
   }
 };
 
 /**
- * 관리자 설정 저장 함수 (식당, 메뉴, 공지사항, 테마, SEO)
+ * 7. 관리자 설정 저장 함수 (식당, 메뉴, 공지사항, 테마, SEO)
  */
 export const saveAdminSettingsToFirestore = async (data: {
   restaurants?: Restaurant[];
@@ -318,34 +199,24 @@ export const saveAdminSettingsToFirestore = async (data: {
   lastResetDateKST?: string;
   [key: string]: any;
 }): Promise<void> => {
-  if (quotaExhausted) return;
   try {
     await setDoc(doc(db, "lunchData", "settings"), data, { merge: true });
-    console.log("Firestore: Admin settings successfully synchronized.");
+    console.log("[Firestore DB] Admin settings successfully synchronized.");
   } catch (error) {
-    if (checkIsQuotaError(error)) {
-      setFirestoreQuotaExhausted(true);
-      console.warn("[Firestore] Daily quota reached during settings save.");
-      return;
-    }
-    console.error("Firestore saveAdminSettingsToFirestore error:", error);
+    console.error("[Firestore DB] saveAdminSettingsToFirestore error:", error);
     throw error;
   }
 };
 
 /**
- * 관리자 설정 실시간 구독 함수
+ * 8. 관리자 설정 실시간 구독 함수 (onSnapshot)
  */
 export const subscribeAdminSettingsFromFirestore = (
   callback: (data: any) => void,
   onError?: (error: any) => void
 ): (() => void) => {
-  if (quotaExhausted) {
-    return () => {};
-  }
   try {
-    let unsubscribe: (() => void) | null = null;
-    unsubscribe = onSnapshot(
+    const unsubscribe = onSnapshot(
       doc(db, "lunchData", "settings"),
       (docSnap) => {
         if (docSnap.exists()) {
@@ -353,56 +224,23 @@ export const subscribeAdminSettingsFromFirestore = (
         }
       },
       (err) => {
-        if (checkIsQuotaError(err)) {
-          setFirestoreQuotaExhausted(true);
-          console.warn("[Firestore] Daily free quota exceeded. Halting settings subscription to stop retry loops.");
-          if (unsubscribe) {
-            try {
-              unsubscribe();
-            } catch (e) {}
-          }
-        } else {
-          console.warn("Firestore settings subscription notice:", err);
-        }
+        console.warn("[Firestore DB] settings onSnapshot notice:", err);
         if (onError) onError(err);
       }
     );
-    return () => {
-      if (unsubscribe) unsubscribe();
-    };
+    return unsubscribe;
   } catch (err) {
-    if (checkIsQuotaError(err)) {
-      setFirestoreQuotaExhausted(true);
-    }
+    console.error("[Firestore DB] settings subscription error:", err);
     return () => {};
   }
 };
 
-// 기존 함수와의 호환성 유지
-export const saveAdminData = async (data: any) => {
-  if (quotaExhausted) return;
-  try {
-    await setDoc(doc(db, "lunchData", "settings"), data, { merge: true });
-  } catch (e) {
-    if (checkIsQuotaError(e)) {
-      setFirestoreQuotaExhausted(true);
-    }
-  }
+// 호환성 인터페이스 유지
+export const isFirestoreQuotaExhausted = (): boolean => false;
+export const setFirestoreQuotaExhausted = (_val: boolean) => {};
+export const resetFirestoreQuotaCheck = () => {};
+export const subscribeQuotaStatus = (_cb: (exhausted: boolean) => void) => {
+  return () => {};
 };
-
-export const subscribeAdminData = (callback: (data: any) => void) => {
-  if (quotaExhausted) return () => {};
-  try {
-    return onSnapshot(doc(db, "lunchData", "settings"), (docSnap) => {
-      if (docSnap.exists()) {
-        callback(docSnap.data());
-      }
-    }, (err) => {
-      if (checkIsQuotaError(err)) {
-        setFirestoreQuotaExhausted(true);
-      }
-    });
-  } catch (e) {
-    return () => {};
-  }
-};
+export const saveAdminData = saveAdminSettingsToFirestore;
+export const subscribeAdminData = subscribeAdminSettingsFromFirestore;
