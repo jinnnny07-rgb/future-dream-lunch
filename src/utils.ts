@@ -42,50 +42,111 @@ export function getKSTDateString(date: Date = new Date()): string {
 }
 
 /**
+ * 한국 표준시(KST, UTC+9) 기준 일시 문자열 ('YYYY.MM.DD HH:mm') 반환
+ * 사용자 브라우저의 로컬 타임존과 무관하게 항상 한국 시간으로 일관되게 생성합니다.
+ */
+export function getCurrentDateTimeString(date: Date = new Date()): string {
+  try {
+    const formatter = new Intl.DateTimeFormat('ko-KR', {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    const parts = formatter.formatToParts(date);
+    const getPart = (type: string) => parts.find((p) => p.type === type)?.value || '';
+    const year = getPart('year');
+    const month = getPart('month');
+    const day = getPart('day');
+    const hour = getPart('hour');
+    const minute = getPart('minute');
+    return `${year}.${month}.${day} ${hour}:${minute}`;
+  } catch (e) {
+    const utc = date.getTime() + date.getTimezoneOffset() * 60000;
+    const kstDate = new Date(utc + 9 * 60 * 60 * 1000);
+    const year = kstDate.getFullYear();
+    const month = String(kstDate.getMonth() + 1).padStart(2, '0');
+    const day = String(kstDate.getDate()).padStart(2, '0');
+    const hours = String(kstDate.getHours()).padStart(2, '0');
+    const minutes = String(kstDate.getMinutes()).padStart(2, '0');
+    return `${year}.${month}.${day} ${hours}:${minutes}`;
+  }
+}
+
+/**
  * 특정 신청 내역이 오늘(KST 기준) 생성된 유효한 신청인지 판별
  */
 export function isBookingFromTodayKST(booking: Booking, todayKST = getKSTDateString()): boolean {
   if (!booking) return false;
 
-  // 1. createdAt 형식 확인: e.g. "2026.09.18 10:42" or "2026-09-18 10:42"
+  // 1. 명시적 bookingDateKST 필드 확인 (e.g. "2026-09-21")
+  const bookingDateKST = (booking as any).bookingDateKST;
+  if (bookingDateKST && typeof bookingDateKST === 'string') {
+    return bookingDateKST === todayKST;
+  }
+
+  // 2. createdAt 형식 확인 (e.g. "2026.09.21 09:20" or "2026-09-21 09:20")
   const rawDate = booking.createdAt || '';
   const normalized = rawDate.replace(/\./g, '-').trim();
   if (normalized.startsWith(todayKST)) {
     return true;
   }
 
-  // 2. ID에 타임스탬프가 포함된 경우: e.g. "book-1726651234567"
+  // 3. ID에 밀리초 타임스탬프가 포함된 경우: e.g. "book-1726880000000"
   const match = booking.id.match(/\d{12,}/);
   if (match) {
     const ts = parseInt(match[0], 10);
     if (!isNaN(ts) && ts > 0) {
-      const bookingDateKST = getKSTDateString(new Date(ts));
-      return bookingDateKST === todayKST;
+      return getKSTDateString(new Date(ts)) === todayKST;
     }
   }
 
-  // 3. updatedAt 필드가 숫자로 있는 경우
+  // 4. updatedAt 필드가 숫자로 있는 경우
   const updatedAt = (booking as any).updatedAt;
   if (typeof updatedAt === 'number' && updatedAt > 0) {
-    const bookingDateKST = getKSTDateString(new Date(updatedAt));
-    return bookingDateKST === todayKST;
+    return getKSTDateString(new Date(updatedAt)) === todayKST;
   }
 
-  // 4. 날짜 없이 시간만 있고(e.g. "10:42"), createdAt에 연도 정보가 없는 옛 레거시 데이터는 오늘이 아님
   return false;
 }
 
 /**
- * Formats current date and time into 'YYYY.MM.DD HH:mm'
+ * 특정 신청 내역이 오늘(KST 기준) 이전의 과거 날짜인지 엄격히 판별
+ * 오늘(KST) 신청된 내역은 절대로 과거 날짜로 분류되지 않습니다.
  */
-export function getCurrentDateTimeString(): string {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  const hours = String(now.getHours()).padStart(2, '0');
-  const minutes = String(now.getMinutes()).padStart(2, '0');
-  return `${year}.${month}.${day} ${hours}:${minutes}`;
+export function isBookingFromPastDaysKST(booking: Booking, todayKST = getKSTDateString()): boolean {
+  if (!booking) return false;
+  if (isBookingFromTodayKST(booking, todayKST)) return false;
+
+  // 1. 명시적 bookingDateKST 확인 (e.g. "2026-09-18" < "2026-09-21")
+  const bDate = (booking as any).bookingDateKST;
+  if (bDate && typeof bDate === 'string' && bDate.length >= 10) {
+    return bDate < todayKST;
+  }
+
+  // 2. createdAt 날짜 부분 확인
+  const rawDate = (booking.createdAt || '').replace(/\./g, '-').trim();
+  if (rawDate.length >= 10) {
+    const datePart = rawDate.slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+      return datePart < todayKST;
+    }
+  }
+
+  // 3. ID 타임스탬프 확인
+  const match = booking.id.match(/\d{12,}/);
+  if (match) {
+    const ts = parseInt(match[0], 10);
+    if (!isNaN(ts) && ts > 0) {
+      const dateKST = getKSTDateString(new Date(ts));
+      return dateKST < todayKST;
+    }
+  }
+
+  return false;
 }
 
 /**

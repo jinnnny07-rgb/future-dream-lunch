@@ -41,6 +41,8 @@ export interface Booking {
   difference: number;
   agreedToPolicy: boolean;
   createdAt: string;
+  bookingDateKST?: string; // e.g. '2026-09-21' for exact KST daily reset & filtering
+  updatedAt?: number;
   status: '접수완료' | '식권수령완료' | '식당이동중' | '식사완료';
 }
 

@@ -21,7 +21,12 @@ import {
   saveAdminSettingsToFirestore, 
   subscribeAdminSettingsFromFirestore 
 } from './firebase';
-import { getKSTDateString, isBookingFromTodayKST } from './utils';
+import { 
+  getKSTDateString, 
+  isBookingFromTodayKST, 
+  isBookingFromPastDaysKST, 
+  getCurrentDateTimeString 
+} from './utils';
 import { Navbar } from './components/Navbar';
 import { NoticeBanner } from './components/NoticeBanner';
 import { AcademyHero } from './components/AcademyHero';
@@ -33,43 +38,7 @@ import { AdminAuthModal } from './components/AdminAuthModal';
 import { ShieldCheck, User, Sparkles, Lock, Clock } from 'lucide-react';
 
 const MENU_DATA_VERSION = 'v4_20260917_remove_chingmarei_voucher_notice';
-const BOOKINGS_CLEARED_VERSION = 'v5_20260918_immediate_clear_bookings';
 const KST_RESET_DATE_KEY = 'app_bookings_last_reset_kst';
-
-const getDeletedBookingIds = (): Set<string> => {
-  try {
-    const raw = localStorage.getItem('app_deleted_booking_ids');
-    if (raw) {
-      const arr = JSON.parse(raw);
-      if (Array.isArray(arr)) return new Set(arr);
-    }
-  } catch (e) {
-    console.error(e);
-  }
-  return new Set();
-};
-
-const markBookingAsDeleted = (id: string) => {
-  try {
-    const set = getDeletedBookingIds();
-    set.add(id);
-    localStorage.setItem('app_deleted_booking_ids', JSON.stringify(Array.from(set)));
-  } catch (e) {
-    console.error(e);
-  }
-};
-
-const unmarkBookingAsDeleted = (id: string) => {
-  try {
-    const set = getDeletedBookingIds();
-    if (set.has(id)) {
-      set.delete(id);
-      localStorage.setItem('app_deleted_booking_ids', JSON.stringify(Array.from(set)));
-    }
-  } catch (e) {
-    console.error(e);
-  }
-};
 
 export default function App() {
   // Persistent State (localStorage with initial fallbacks)
@@ -106,24 +75,7 @@ export default function App() {
   });
 
   const [bookings, setBookings] = useState<Booking[]>(() => {
-    // 1. One-time immediate clear version check (Requirement 1)
-    if (localStorage.getItem('app_bookings_cleared_version') !== BOOKINGS_CLEARED_VERSION) {
-      localStorage.setItem('app_bookings', '[]');
-      localStorage.removeItem('app_deleted_booking_ids');
-      localStorage.setItem('app_bookings_cleared_version', BOOKINGS_CLEARED_VERSION);
-      return [];
-    }
-
-    // 2. Midnight check (Requirement 2)
     const todayKST = getKSTDateString();
-    const lastReset = localStorage.getItem(KST_RESET_DATE_KEY);
-    if (lastReset && lastReset !== todayKST) {
-      localStorage.setItem('app_bookings', '[]');
-      localStorage.setItem(KST_RESET_DATE_KEY, todayKST);
-      return [];
-    }
-
-    // 3. Filter valid bookings for today KST
     const saved = localStorage.getItem('app_bookings');
     if (saved) {
       try {
@@ -235,75 +187,46 @@ export default function App() {
     localStorage.setItem('app_seo_config', JSON.stringify(seoConfig));
   }, [seoConfig]);
 
-  // 1. One-time immediate cleanup of all legacy stored bookings from Firestore & localStorage (Requirement 1)
+  // 1. Automatic Midnight KST (00:00) Rollover Listener
+  // Periodically checks if the KST calendar day has advanced to a new day.
+  // When midnight passes, the displayed list resets cleanly for the new day.
   useEffect(() => {
-    const runImmediateClear = async () => {
-      const alreadyCleared = sessionStorage.getItem('firestore_initial_clear_done_20260918');
-      if (!alreadyCleared) {
-        try {
-          console.log('[Init] Executing requested immediate deletion of all legacy bookings...');
-          await clearAllBookingsFromFirestore();
-          setBookings([]);
-          localStorage.setItem('app_bookings', '[]');
-          localStorage.removeItem('app_deleted_booking_ids');
-          sessionStorage.setItem('firestore_initial_clear_done_20260918', 'true');
-        } catch (e) {
-          console.warn('Initial clearAllBookingsFromFirestore warning:', e);
-        }
+    let lastDateKST = getKSTDateString();
+
+    const intervalId = setInterval(() => {
+      const currentDateKST = getKSTDateString();
+      if (currentDateKST !== lastDateKST) {
+        console.log(`[KST Midnight Rollover] New day detected in KST: ${lastDateKST} -> ${currentDateKST}`);
+        lastDateKST = currentDateKST;
+        setBookings((prev) => prev.filter((b) => isBookingFromTodayKST(b, currentDateKST)));
+        localStorage.setItem('app_bookings', '[]');
       }
-    };
-    runImmediateClear();
-  }, []);
+    }, 10000); // Check every 10 seconds
 
-  // 2. Automatic Midnight KST (00:00) Rollover Checker (Cron-like interval) (Requirement 2)
-  useEffect(() => {
-    const checkMidnightReset = async () => {
-      const todayKST = getKSTDateString();
-      const lastResetDate = localStorage.getItem(KST_RESET_DATE_KEY);
-
-      if (lastResetDate && lastResetDate !== todayKST) {
-        console.log(`[KST Midnight Reset] Rollover detected (${lastResetDate} -> ${todayKST}). Clearing all bookings.`);
-        try {
-          await clearAllBookingsFromFirestore();
-          setBookings([]);
-          localStorage.setItem('app_bookings', '[]');
-          localStorage.removeItem('app_deleted_booking_ids');
-          localStorage.setItem(KST_RESET_DATE_KEY, todayKST);
-          await saveAdminSettingsToFirestore({ lastResetDateKST: todayKST });
-        } catch (err) {
-          console.error('[KST Midnight Reset] Failed to clear bookings:', err);
-        }
-      } else if (!lastResetDate) {
-        localStorage.setItem(KST_RESET_DATE_KEY, todayKST);
-      }
-    };
-
-    checkMidnightReset();
-    const intervalId = setInterval(checkMidnightReset, 15000); // Check every 15s
     return () => clearInterval(intervalId);
   }, []);
 
-  // 3. Real-time Firestore synchronization for Bookings and Admin Settings
+  // 2. Real-time Firestore synchronization for Bookings and Admin Settings
   useEffect(() => {
-    // 1. Subscribe to Bookings from Firestore with automatic KST day filter & zero-resurrection
+    // 1. Subscribe to Bookings from Firestore with real-time multi-device sync
     const unsubscribeBookings = subscribeBookingsFromFirestore((remoteBookings) => {
       if (remoteBookings && Array.isArray(remoteBookings)) {
         const todayKST = getKSTDateString();
         const activeTodayBookings: Booking[] = [];
-        const staleBookingIds: string[] = [];
+        const pastDayBookingIds: string[] = [];
 
         remoteBookings.forEach((b) => {
           if (isBookingFromTodayKST(b, todayKST)) {
             activeTodayBookings.push(b);
-          } else {
-            staleBookingIds.push(b.id);
+          } else if (isBookingFromPastDaysKST(b, todayKST)) {
+            pastDayBookingIds.push(b.id);
           }
         });
 
-        // Automatically purge stale bookings from past days from Firestore in background
-        if (staleBookingIds.length > 0) {
-          console.log(`[Firestore] Purging ${staleBookingIds.length} stale bookings from previous days:`, staleBookingIds);
-          staleBookingIds.forEach((id) => {
+        // Background cleanup of past-day bookings only (today's bookings are NEVER touched!)
+        if (pastDayBookingIds.length > 0) {
+          console.log(`[Firestore] Purging ${pastDayBookingIds.length} past-day bookings:`, pastDayBookingIds);
+          pastDayBookingIds.forEach((id) => {
             deleteBookingFromFirestore(id).catch(() => {});
           });
         }
@@ -480,7 +403,6 @@ export default function App() {
       await clearAllBookingsFromFirestore();
       setBookings([]);
       localStorage.setItem('app_bookings', '[]');
-      localStorage.removeItem('app_deleted_booking_ids');
       console.log('[Firestore] All bookings cleared.');
     } catch (err) {
       console.error('Failed to clear all bookings:', err);
@@ -490,10 +412,13 @@ export default function App() {
   };
 
   const handleAddBooking = async (newBooking: Booking) => {
-    unmarkBookingAsDeleted(newBooking.id);
-
+    const now = new Date();
+    const todayKST = getKSTDateString(now);
     const sanitizedBooking: Booking = {
       ...newBooking,
+      bookingDateKST: newBooking.bookingDateKST || todayKST,
+      createdAt: newBooking.createdAt || getCurrentDateTimeString(now),
+      updatedAt: newBooking.updatedAt || Date.now(),
       memo: newBooking.memo ? newBooking.memo.trim() : '',
       companions: newBooking.companions || [],
       rawCompanions: newBooking.rawCompanions || [],
@@ -519,8 +444,11 @@ export default function App() {
   };
 
   const handleUpdateBooking = async (updatedBooking: Booking) => {
+    const todayKST = getKSTDateString();
     const sanitized: Booking = {
       ...updatedBooking,
+      bookingDateKST: updatedBooking.bookingDateKST || todayKST,
+      updatedAt: Date.now(),
       memo: updatedBooking.memo ? updatedBooking.memo.trim() : '',
       companions: updatedBooking.companions || [],
       rawCompanions: updatedBooking.rawCompanions || [],
@@ -544,8 +472,6 @@ export default function App() {
   };
 
   const handleDeleteBooking = async (bookingId: string) => {
-    markBookingAsDeleted(bookingId);
-
     setBookings((prev) => {
       const updated = prev.filter((b) => b.id !== bookingId);
       try {

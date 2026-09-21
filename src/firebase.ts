@@ -11,6 +11,7 @@ import {
   writeBatch
 } from "firebase/firestore";
 import { Booking, Restaurant, Notice, ThemeConfig, SeoConfig } from "./types";
+import { getKSTDateString } from "./utils";
 
 const firebaseConfig = {
   apiKey: "AIzaSyAw7xQ8FxX0qwyN_XBx9GAq1nq7jIziWqE",
@@ -48,8 +49,9 @@ export const cleanBookingForFirestore = (booking: Booking): Record<string, any> 
     difference: Number(booking.difference) || 0,
     agreedToPolicy: Boolean(booking.agreedToPolicy),
     createdAt: booking.createdAt || '',
+    bookingDateKST: booking.bookingDateKST || getKSTDateString(booking.updatedAt ? new Date(booking.updatedAt) : new Date()),
     status: booking.status || '접수완료',
-    updatedAt: Date.now(),
+    updatedAt: typeof booking.updatedAt === 'number' ? booking.updatedAt : Date.now(),
   };
 };
 
@@ -150,6 +152,8 @@ export const subscribeBookingsFromFirestore = (
               difference: Number(data.difference) || 0,
               agreedToPolicy: Boolean(data.agreedToPolicy),
               createdAt: data.createdAt || '',
+              bookingDateKST: data.bookingDateKST || (data.createdAt ? data.createdAt.split(' ')[0].replace(/\./g, '-') : ''),
+              updatedAt: typeof data.updatedAt === 'number' ? data.updatedAt : undefined,
               status: data.status || '접수완료',
             });
           }

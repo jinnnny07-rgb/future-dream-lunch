@@ -23,7 +23,7 @@ import {
   CheckCircle
 } from 'lucide-react';
 import { Restaurant, MenuItem, Booking, Notice, ThemeConfig, SeoConfig } from '../types';
-import { formatKRW, generateRestaurantReservationText, copyToClipboard, getCurrentDateTimeString, formatDisplayCreatedAt } from '../utils';
+import { formatKRW, generateRestaurantReservationText, copyToClipboard, getCurrentDateTimeString, formatDisplayCreatedAt, getKSTDateString } from '../utils';
 import { EditBookingModal } from './EditBookingModal';
 import { saveAdminSettingsToFirestore } from '../firebase';
 
@@ -286,6 +286,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       difference: 4 * (themeConfig.budgetPerPerson || 10000),
       agreedToPolicy: true,
       createdAt: getCurrentDateTimeString(),
+      bookingDateKST: getKSTDateString(),
+      updatedAt: Date.now(),
       status: '접수완료',
     };
     setEditingBooking(newB);

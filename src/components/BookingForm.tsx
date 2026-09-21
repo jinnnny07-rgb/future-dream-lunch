@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Restaurant, MenuItem, Booking, ThemeConfig, OrderItem } from '../types';
-import { maskKoreanName, formatKRW, getCurrentDateTimeString } from '../utils';
+import { maskKoreanName, formatKRW, getCurrentDateTimeString, getKSTDateString } from '../utils';
 import { BudgetCalculator } from './BudgetCalculator';
 
 interface BookingFormProps {
@@ -150,7 +150,9 @@ export const BookingForm: React.FC<BookingFormProps> = ({
     });
 
     const masked = maskKoreanName(rawName);
-    const timeStr = getCurrentDateTimeString();
+    const now = new Date();
+    const timeStr = getCurrentDateTimeString(now);
+    const bookingDateKST = getKSTDateString(now);
 
     // Filter valid companion names and mask them
     const validRawCompanions = companions.map((c) => c.trim()).filter((c) => c.length > 0);
@@ -172,6 +174,8 @@ export const BookingForm: React.FC<BookingFormProps> = ({
       difference,
       agreedToPolicy: true,
       createdAt: timeStr,
+      bookingDateKST,
+      updatedAt: Date.now(),
       status: '접수완료',
     };
 
