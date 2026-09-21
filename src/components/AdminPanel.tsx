@@ -222,31 +222,38 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [selectedBookingIds, setSelectedBookingIds] = useState<string[]>([]);
   const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState<boolean>(false);
 
-  const confirmDeleteBooking = (bookingId: string) => {
-    if (onDeleteBooking) {
-      onDeleteBooking(bookingId);
-    }
+  const confirmDeleteBooking = async (bookingId: string) => {
     const updated = bookings.filter((b) => b.id !== bookingId);
     onUpdateBookings(updated);
     setSelectedBookingIds((prev) => prev.filter((id) => id !== bookingId));
     persistToStorage(restaurants, themeConfig, notices, seoConfig, updated);
-    triggerSaveNotification('점심 신청 내역이 안전하게 삭제되었습니다.');
+    triggerSaveNotification('점심 신청 내역이 데이터베이스(DB)에서 삭제되었습니다.');
     setBookingToDelete(null);
+
+    if (onDeleteBooking) {
+      try {
+        await onDeleteBooking(bookingId);
+      } catch (e) {
+        console.error('Firestore delete error in AdminPanel:', e);
+      }
+    }
   };
 
-  const confirmBulkDelete = () => {
+  const confirmBulkDelete = async () => {
     if (selectedBookingIds.length === 0) return;
-    selectedBookingIds.forEach((id) => {
-      if (onDeleteBooking) {
-        onDeleteBooking(id);
-      }
-    });
-    const updated = bookings.filter((b) => !selectedBookingIds.includes(b.id));
+    const idsToDelete = [...selectedBookingIds];
+    const updated = bookings.filter((b) => !idsToDelete.includes(b.id));
     onUpdateBookings(updated);
-    persistToStorage(restaurants, themeConfig, notices, seoConfig, updated);
-    triggerSaveNotification(`선택한 ${selectedBookingIds.length}개의 신청 내역이 일괄 삭제되었습니다.`);
     setSelectedBookingIds([]);
+    persistToStorage(restaurants, themeConfig, notices, seoConfig, updated);
+    triggerSaveNotification(`선택한 ${idsToDelete.length}개의 신청 내역이 데이터베이스(DB)에서 삭제되었습니다.`);
     setIsBulkDeleteModalOpen(false);
+
+    if (onDeleteBooking) {
+      await Promise.allSettled(
+        idsToDelete.map((id) => onDeleteBooking(id))
+      );
+    }
   };
 
   const toggleSelectAllBookings = () => {
