@@ -225,22 +225,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState<boolean>(false);
 
   const confirmDeleteBooking = async (bookingId: string) => {
-    // 1. Optimistically update local state & selection
-    const updated = bookings.filter((b) => b.id !== bookingId);
-    onUpdateBookings(updated);
-    setSelectedBookingIds((prev) => prev.filter((id) => id !== bookingId));
+    if (!bookingId) return;
     setBookingToDelete(null);
 
-    // 2. Directly call Firestore deleteDoc to permanently delete the document from the database
+    // 1. Firebase deleteDoc 함수를 통해 DB 내 해당 문서를 실제로 비동기(await) 삭제
     try {
       if (onDeleteBooking) {
         await onDeleteBooking(bookingId);
       } else {
         await deleteBookingFromFirestore(bookingId);
       }
-      triggerSaveNotification('점심 신청 내역이 데이터베이스(Firestore DB)에서 영구 삭제되었습니다.');
-    } catch (e) {
+
+      // 2. DB 삭제가 성공적으로 완료된 후 화면 목록(State) 업데이트
+      onUpdateBookings(bookings.filter((b) => b.id !== bookingId));
+      setSelectedBookingIds((prev) => prev.filter((id) => id !== bookingId));
+      triggerSaveNotification('점심 신청 내역이 데이터베이스(Firestore DB)에서 완전히 삭제되었습니다.');
+    } catch (e: any) {
       console.error('[AdminPanel] Firestore deleteDoc error:', e);
+      const msg = e?.message || e?.code || String(e);
+      alert(`[DB 삭제 실패] Firestore 데이터베이스에서 내역을 삭제하지 못했습니다.\n\n원인: ${msg}\n\nFirebase 권한 설정 또는 네트워크 상태를 확인해주세요.`);
       triggerSaveNotification('데이터베이스 삭제 중 오류가 발생했습니다.');
     }
   };
@@ -248,23 +251,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const confirmBulkDelete = async () => {
     if (selectedBookingIds.length === 0) return;
     const idsToDelete = [...selectedBookingIds];
-    
-    // 1. Optimistically update local state
-    const updated = bookings.filter((b) => !idsToDelete.includes(b.id));
-    onUpdateBookings(updated);
-    setSelectedBookingIds([]);
     setIsBulkDeleteModalOpen(false);
 
-    // 2. Directly call Firestore batch delete in database
+    // 1. Firebase DB 일괄 삭제 비동기(await) 실행
     try {
       await deleteMultipleBookingsFromFirestore(idsToDelete);
-      triggerSaveNotification(`선택한 ${idsToDelete.length}개의 신청 내역이 데이터베이스(DB)에서 영구 삭제되었습니다.`);
-    } catch (e) {
-      console.error('[AdminPanel] Batch DB delete error, falling back to individual delete:', e);
-      if (onDeleteBooking) {
-        await Promise.allSettled(idsToDelete.map((id) => onDeleteBooking(id)));
-      }
-      triggerSaveNotification(`선택한 ${idsToDelete.length}개의 신청 내역 삭제가 완료되었습니다.`);
+
+      // 2. DB 삭제가 성공적으로 완료된 후 화면 목록(State) 업데이트
+      onUpdateBookings(bookings.filter((b) => !idsToDelete.includes(b.id)));
+      setSelectedBookingIds([]);
+      triggerSaveNotification(`선택한 ${idsToDelete.length}개의 신청 내역이 데이터베이스(DB)에서 완전히 삭제되었습니다.`);
+    } catch (e: any) {
+      console.error('[AdminPanel] Batch DB delete error:', e);
+      const msg = e?.message || e?.code || String(e);
+      alert(`[DB 일괄 삭제 실패] 데이터베이스 일괄 삭제에 실패했습니다.\n\n원인: ${msg}`);
+      triggerSaveNotification('데이터베이스 일괄 삭제 중 오류가 발생했습니다.');
     }
   };
 

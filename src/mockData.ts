@@ -109,8 +109,6 @@ export const INITIAL_NOTICES: Notice[] = [
   },
 ];
 
-export const INITIAL_BOOKINGS: Booking[] = [];
-
 export const DEFAULT_THEME_CONFIG: ThemeConfig = {
   primaryColor: '#2C2B70',
   secondaryColor: '#C6C4C3',

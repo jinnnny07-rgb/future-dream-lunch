@@ -208,29 +208,24 @@ export default function App() {
     });
 
     // 1. Subscribe to Bookings from Firestore with real-time multi-device sync
-    const unsubscribeBookings = subscribeBookingsFromFirestore((remoteBookings) => {
-      if (remoteBookings && Array.isArray(remoteBookings)) {
-        const todayKST = getKSTDateString();
-        const activeTodayBookings: Booking[] = [];
+    const unsubscribeBookings = subscribeBookingsFromFirestore(
+      (remoteBookings) => {
+        if (remoteBookings && Array.isArray(remoteBookings)) {
+          // Sort active bookings (newest first)
+          const sorted = [...remoteBookings].sort((a, b) => {
+            const timeA = (a as any).updatedAt || parseInt(a.id.replace(/\D/g, ''), 10) || 0;
+            const timeB = (b as any).updatedAt || parseInt(b.id.replace(/\D/g, ''), 10) || 0;
+            return timeB - timeA;
+          });
 
-        // Strictly keep only bookings for today (KST)
-        remoteBookings.forEach((b) => {
-          if (isBookingFromTodayKST(b, todayKST)) {
-            activeTodayBookings.push(b);
-          }
-        });
-
-        // Sort active today bookings (newest first)
-        activeTodayBookings.sort((a, b) => {
-          const timeA = (a as any).updatedAt || parseInt(a.id.replace(/\D/g, ''), 10) || 0;
-          const timeB = (b as any).updatedAt || parseInt(b.id.replace(/\D/g, ''), 10) || 0;
-          return timeB - timeA;
-        });
-
-        setBookings(activeTodayBookings);
-        setIsBookingsLoaded(true);
+          setBookings(sorted);
+          setIsBookingsLoaded(true);
+        }
+      },
+      (error) => {
+        console.error('[Firestore DB] Bookings onSnapshot subscription error:', error);
       }
-    });
+    );
 
     // 2. Subscribe to Admin Settings from Firestore (restaurants, notices, theme, seo)
     const unsubscribeSettings = subscribeAdminSettingsFromFirestore((remoteSettings) => {
@@ -389,8 +384,10 @@ export default function App() {
       await clearAllBookingsFromFirestore();
       setBookings([]);
       console.log('[Firestore DB] All bookings successfully deleted from database.');
-    } catch (err) {
+    } catch (err: any) {
       console.error('[Firestore DB] Failed to clear all bookings:', err);
+      const msg = err?.message || err?.code || String(err);
+      alert(`[DB 전체 초기화 오류] Firestore 데이터베이스 전체 삭제에 실패했습니다.\n\n원인: ${msg}`);
       throw err;
     }
   };
@@ -444,15 +441,18 @@ export default function App() {
   };
 
   const handleDeleteBooking = async (bookingId: string) => {
-    // 1. Optimistic UI update
-    setBookings((prev) => prev.filter((b) => b.id !== bookingId));
-
-    // 2. Direct Firestore deleteDoc execution on database
+    if (!bookingId) return;
     try {
+      // 1. Firebase deleteDoc 함수를 통해 DB 내 해당 문서 비동기(await) 삭제
       await deleteBookingFromFirestore(bookingId);
       console.log('[Firestore DB] Booking successfully deleted from DB:', bookingId);
-    } catch (err) {
+
+      // 2. DB 삭제 완료 후 화면 목록(State) 업데이트 (onSnapshot으로도 동기화)
+      setBookings((prev) => prev.filter((b) => b.id !== bookingId));
+    } catch (err: any) {
       console.error('[Firestore DB] Failed to delete booking from DB:', err);
+      const msg = err?.message || err?.code || String(err);
+      alert(`[DB 삭제 오류] Firestore 데이터베이스 삭제에 실패했습니다.\n\n원인: ${msg}\n\nFirebase 권한 설정 또는 네트워크 상태를 확인해주세요.`);
       throw err;
     }
   };
