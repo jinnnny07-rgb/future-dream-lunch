@@ -198,7 +198,7 @@ export const AcademyHero: React.FC<AcademyHeroProps> = ({
 
                 {/* ONLY 그림1 (Future & Dream Academy Staircase Logo) */}
                 <img 
-                  src="/logo-future-dream.svg" 
+                  src={`${import.meta.env.BASE_URL}logo-future-dream.svg`} 
                   alt="신세계 퓨쳐앤드림 아카데미 공식 로고"
                   className="w-full h-full object-contain filter drop-shadow-sm"
                 />

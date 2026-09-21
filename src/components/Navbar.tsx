@@ -80,7 +80,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center p-1.5 bg-white border border-slate-200 dark:border-slate-700 shadow-md transition-transform hover:scale-105"
             >
               <img 
-                src="/logo-future-dream.svg" 
+                src={`${import.meta.env.BASE_URL}logo-future-dream.svg`} 
                 alt="Future & Dream Academy Logo" 
                 className="w-full h-full object-contain"
               />
