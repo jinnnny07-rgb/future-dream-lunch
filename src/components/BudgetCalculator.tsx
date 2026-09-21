@@ -131,11 +131,13 @@ export const BudgetCalculator: React.FC<BudgetCalculatorProps> = ({
       {isOver && (
         <div className="mt-3.5 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800/80 flex items-start space-x-2.5 text-xs text-rose-800 dark:text-rose-300">
           <AlertTriangle className="w-4 h-4 text-rose-600 mt-0.5 shrink-0" />
-          <div>
-            <span className="font-bold block mb-0.5">식대 지원 한도를 {formatKRW(overAmount)} 초과하였습니다!</span>
-            <span>
-              총 결제 금액 중 지원 한도를 초과하는 금액은 신청 팀에서 식당 방문 시 직접 현장 결제(자부담)하셔야 합니다.
+          <div className="space-y-1">
+            <span className="font-bold block">
+              1인당 식대 지원 한도 초과 안내 (+{formatKRW(overAmount)} 자부담 발생)
             </span>
+            <p className="text-slate-600 dark:text-slate-300 leading-relaxed">
+              총 주문 금액(1인 평균 {formatKRW(avgPerPerson)})이 1인당 기본 지원 한도({formatKRW(budgetPerPerson)})를 초과하였습니다. 초과액은 식당 방문 시 현장 자부담 결제해주셔야 합니다.
+            </p>
           </div>
         </div>
       )}

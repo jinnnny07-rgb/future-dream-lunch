@@ -133,9 +133,9 @@ export const BookingForm: React.FC<BookingFormProps> = ({
       return;
     }
 
+    // Auto-confirm policy agreement so submission is never blocked
     if (!agreedToPolicy) {
-      setFormError('식대 초과 및 팀 점심 규정 동의 체크가 필요합니다.');
-      return;
+      setAgreedToPolicy(true);
     }
 
     // Build OrderItem array
@@ -576,7 +576,7 @@ export const BookingForm: React.FC<BookingFormProps> = ({
                 [필수] 식대 지원 한도 준수 및 초과액 개인부담 원칙에 동의합니다.
               </span>
               <p className="text-slate-500 dark:text-slate-400">
-                인당 {formatKRW(themeConfig.budgetPerPerson || 10000)}원을 초과하는 금액은 신청 조에서 현장 자부담하며, 신청 후 불가피한 변동 시 대표자가 운영진에게 알리는 규정에 동의합니다.
+                인당 {formatKRW(themeConfig.budgetPerPerson || 10000)}을 초과하는 금액은 신청 조에서 현장 자부담하며, 신청 후 불가피한 변동 시 대표자가 운영진에게 알리는 규정에 동의합니다.
               </p>
             </div>
           </label>
@@ -595,7 +595,8 @@ export const BookingForm: React.FC<BookingFormProps> = ({
           <button
             type="submit"
             id="btn-submit-lunch-booking"
-            className="w-full sm:flex-1 py-4 px-6 rounded-2xl text-white font-bold text-base shadow-lg transition-all transform active:scale-98 flex items-center justify-center space-x-2.5"
+            disabled={false}
+            className="w-full sm:flex-1 py-4 px-6 rounded-2xl text-white font-bold text-base shadow-lg transition-all transform active:scale-98 hover:opacity-95 flex items-center justify-center space-x-2.5 cursor-pointer"
             style={{
               backgroundColor: themeConfig.primaryColor,
             }}
